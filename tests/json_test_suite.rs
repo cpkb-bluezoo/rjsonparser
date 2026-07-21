@@ -5,17 +5,18 @@ use std::fs;
 use std::path::PathBuf;
 
 fn suite_dir() -> PathBuf {
-    // Prefer sibling Java repo corpus; fall back to vendored path if present.
+    // Same layout as CI: clone of https://github.com/nst/JSONTestSuite
     let candidates = [
-        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../jsonparser/JSONTestSuite/test_parsing"),
         PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("JSONTestSuite/test_parsing"),
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../JSONTestSuite/test_parsing"),
     ];
     candidates
         .into_iter()
         .find(|p| p.is_dir())
         .unwrap_or_else(|| {
             panic!(
-                "JSONTestSuite not found; expected at ../jsonparser/JSONTestSuite/test_parsing"
+                "JSONTestSuite not found. Run: ./scripts/fetch-json-test-suite.sh\n\
+                 (clones https://github.com/nst/JSONTestSuite into JSONTestSuite/)"
             )
         })
 }

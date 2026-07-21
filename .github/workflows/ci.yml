@@ -1,0 +1,23 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # https://github.com/nst/JSONTestSuite
+      - uses: actions/checkout@v4
+        with:
+          repository: nst/JSONTestSuite
+          path: JSONTestSuite
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - run: cargo test --all-features
+      - run: cargo doc --no-deps

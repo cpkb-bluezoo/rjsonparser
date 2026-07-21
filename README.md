@@ -61,6 +61,16 @@ w.write_end_object()?;
 let bytes = w.finish()?;
 ```
 
+## Testing
+
+```bash
+# Same corpus CI uses: https://github.com/nst/JSONTestSuite
+./scripts/fetch-json-test-suite.sh
+cargo test
+```
+
+`fetch-json-test-suite.sh` clones the suite into `JSONTestSuite/` (gitignored). CI does the equivalent checkout before `cargo test`.
+
 ## Relationship to other bluezoo libraries
 
 | Library | Format | Pattern |
