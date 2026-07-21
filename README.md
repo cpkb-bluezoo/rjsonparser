@@ -69,7 +69,7 @@ let bytes = w.finish()?;
 cargo test
 ```
 
-`fetch-json-test-suite.sh` clones the suite into `JSONTestSuite/` (gitignored). CI does the equivalent checkout before `cargo test`. Each file under `test_parsing/` becomes its own `#[test]` (see `y_*` / `n_*` / `i_*` in the cargo output).
+`fetch-json-test-suite.sh` clones the suite into `JSONTestSuite/` (gitignored). CI does the equivalent checkout before `cargo test`. The suite runs as the `json_test_suite` integration test (one reported case per `y_*` / `n_*` / `i_*` file); it is not wired through `build.rs`, so dependents do not pay for suite discovery when compiling the library.
 
 ## Relationship to other bluezoo libraries
 

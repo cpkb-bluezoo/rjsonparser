@@ -14,4 +14,9 @@ categories = ["encoding", "parser-implementations"]
 name = "rjsonparser"
 path = "src/lib.rs"
 
+[[test]]
+name = "json_test_suite"
+path = "tests/json_test_suite.rs"
+harness = false
+
 [dev-dependencies]
