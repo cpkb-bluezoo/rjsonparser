@@ -1,0 +1,17 @@
+[package]
+name = "rjsonparser"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.70"
+description = "Push-based JSON parser and writer (jsonparser-style)"
+readme = "README.md"
+license = "LGPL-2.1-or-later"
+repository = "https://github.com/cpkb-bluezoo/rjsonparser"
+keywords = ["json", "parser", "streaming", "serialization"]
+categories = ["encoding", "parser-implementations"]
+
+[lib]
+name = "rjsonparser"
+path = "src/lib.rs"
+
+[dev-dependencies]
