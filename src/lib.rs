@@ -63,3 +63,6 @@ pub use locator::Locator;
 pub use number::Number;
 pub use parser::Parser;
 pub use writer::{IndentConfig, Writer};
+
+#[cfg(test)]
+mod json_test_suite;
