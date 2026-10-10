@@ -155,8 +155,14 @@ impl<H: ContentHandler> Parser<H> {
             *data = &[];
             let buf = std::mem::take(&mut self.leftover);
             let mut work = buf.as_slice();
-            self.process_chunk(&mut work)?;
-            self.leftover = work.to_vec();
+            let result = self.process_chunk(&mut work);
+            let consumed = buf.len() - work.len();
+            self.leftover = buf;
+            result?;
+            // Drop only what was consumed. While one large token is still
+            // pending nothing is consumed, so this does no work and the
+            // buffer is not re-copied on every call.
+            self.leftover.drain(..consumed);
         } else {
             let mut work = *data;
             self.process_chunk(&mut work)?;

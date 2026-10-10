@@ -71,6 +71,22 @@ enum State {
     AfterValue,
 }
 
+/// Scan state of a string (or key) cut short by the end of the buffer.
+///
+/// The parser keeps the unconsumed bytes, so the next call sees the same
+/// token starting at the same offset; this lets scanning continue at `pos`
+/// instead of starting again, keeping a large token linear however finely
+/// it is chunked.
+struct StringResume {
+    /// Byte offset into the string content (just after the opening quote).
+    pos: usize,
+    key_hash: u32,
+    saw_non_ascii: bool,
+    using_escape: bool,
+    span_start: usize,
+    src_char_count: usize,
+}
+
 /// Streaming JSON tokenizer calling [`ContentHandler`] methods as tokens are recognized.
 pub(crate) struct Tokenizer {
     reject_duplicate_keys: bool,
@@ -94,6 +110,9 @@ pub(crate) struct Tokenizer {
 
     /// Reused buffer for strings containing escape sequences (UTF-16 code units).
     escape_units: Vec<u16>,
+
+    /// Set when `process_string` returned "need more data"; consumed on re-entry.
+    string_resume: Option<StringResume>,
 }
 
 impl Tokenizer {
@@ -113,6 +132,7 @@ impl Tokenizer {
             duplicate_key_stack: Vec::new(),
             token_count: 0,
             escape_units: Vec::new(),
+            string_resume: None,
         }
     }
 
@@ -402,6 +422,21 @@ impl Tokenizer {
             0
         };
 
+        let mut data_pos = 0usize;
+        if let Some(r) = self.string_resume.take() {
+            if r.pos <= content_start.len() {
+                data_pos = r.pos;
+                key_hash = r.key_hash;
+                saw_non_ascii = r.saw_non_ascii;
+                using_escape = r.using_escape;
+                span_start = r.span_start;
+                src_char_count = r.src_char_count;
+            }
+        }
+        if data_pos > 0 {
+            *data = &content_start[data_pos..];
+        }
+
         let length_limit = if is_key {
             limits.max_name_length
         } else {
@@ -411,6 +446,14 @@ impl Tokenizer {
         loop {
             if data.is_empty() {
                 if !self.closed {
+                    self.string_resume = Some(StringResume {
+                        pos: content_start.len(),
+                        key_hash,
+                        saw_non_ascii,
+                        using_escape,
+                        span_start,
+                        src_char_count,
+                    });
                     return Ok(false);
                 }
                 return Err(ParseError::new("Unclosed string"));
@@ -498,6 +541,21 @@ impl Tokenizer {
             }
 
             if b == b'\\' {
+                // Decode the escape before touching any state, so an escape
+                // cut short by the end of the buffer resumes at its backslash.
+                let escape_start = byte_pos;
+                let Some(code_unit) = self.process_escape_sequence(data)? else {
+                    self.string_resume = Some(StringResume {
+                        pos: byte_pos,
+                        key_hash,
+                        saw_non_ascii,
+                        using_escape,
+                        span_start,
+                        src_char_count,
+                    });
+                    return Ok(false);
+                };
+
                 if !using_escape {
                     if self.escape_units.capacity() > 16384 {
                         self.escape_units = Vec::with_capacity(256);
@@ -513,16 +571,10 @@ impl Tokenizer {
                     src_char_count += append_string_as_utf16(&mut self.escape_units, &span);
                 }
 
-                let escape_start = byte_pos;
-                match self.process_escape_sequence(data)? {
-                    None => return Ok(false),
-                    Some(code_unit) => {
-                        self.escape_units.push(code_unit);
-                        let escape_end = content_start.len() - data.len();
-                        src_char_count += escape_end - escape_start;
-                        span_start = escape_end;
-                    }
-                }
+                self.escape_units.push(code_unit);
+                let escape_end = content_start.len() - data.len();
+                src_char_count += escape_end - escape_start;
+                span_start = escape_end;
             } else if b < 0x20 {
                 return Err(ParseError::new("Unescaped control character in string"));
             }
