@@ -124,3 +124,90 @@ fn indent_spaces2_output() {
     let json = String::from_utf8(w.finish().unwrap()).unwrap();
     assert_eq!(json, "{\n  \"a\": 1\n}");
 }
+
+fn out(w: Writer<Vec<u8>>) -> String {
+    String::from_utf8(w.finish().unwrap()).unwrap()
+}
+
+#[test]
+fn large_output_flushes_correctly() {
+    let mut w = Writer::buffer(16);
+    w.write_start_array().unwrap();
+    for i in 0..1000 {
+        w.write_start_object().unwrap();
+        w.write_key("id").unwrap();
+        w.write_i32(i).unwrap();
+        w.write_key("value").unwrap();
+        w.write_string(&format!("Item {i}")).unwrap();
+        w.write_end_object().unwrap();
+    }
+    w.write_end_array().unwrap();
+    let json = out(w);
+    assert!(json.starts_with(r#"[{"id":0,"value":"Item 0"}"#));
+    assert!(json.ends_with(r#"{"id":999,"value":"Item 999"}]"#));
+}
+
+#[test]
+fn empty_structures() {
+    let mut w = Writer::buffer(64);
+    w.write_start_object().unwrap();
+    w.write_key("empty_array").unwrap();
+    w.write_start_array().unwrap();
+    w.write_end_array().unwrap();
+    w.write_key("empty_object").unwrap();
+    w.write_start_object().unwrap();
+    w.write_end_object().unwrap();
+    w.write_end_object().unwrap();
+    assert_eq!(out(w), r#"{"empty_array":[],"empty_object":{}}"#);
+}
+
+#[test]
+fn indent_tabs_output() {
+    let mut w = Writer::with_indent(Vec::new(), IndentConfig::tabs());
+    w.write_start_object().unwrap();
+    w.write_key("name").unwrap();
+    w.write_string("Alice").unwrap();
+    w.write_key("age").unwrap();
+    w.write_i32(30).unwrap();
+    w.write_key("hobbies").unwrap();
+    w.write_start_array().unwrap();
+    w.write_string("reading").unwrap();
+    w.write_string("coding").unwrap();
+    w.write_end_array().unwrap();
+    w.write_end_object().unwrap();
+    w.flush().unwrap();
+    let json = String::from_utf8(w.inner().clone()).unwrap();
+    assert_eq!(
+        json,
+        "{\n\t\"name\": \"Alice\",\n\t\"age\": 30,\n\t\"hobbies\": [\n\t\t\"reading\",\n\t\t\"coding\"\n\t]\n}"
+    );
+}
+
+#[test]
+fn round_trip_through_parser() {
+    use rjsonparser::{ContentHandler, ParseResult, Parser};
+    #[derive(Default)]
+    struct Echo(Vec<String>);
+    impl ContentHandler for Echo {
+        fn key(&mut self, k: &str) -> ParseResult<()> {
+            self.0.push(format!("k:{k}"));
+            Ok(())
+        }
+        fn string_value(&mut self, v: &str) -> ParseResult<()> {
+            self.0.push(format!("s:{v}"));
+            Ok(())
+        }
+    }
+    let tricky = "quote\" slash\\ nl\n tab\t ctl\u{1} caf\u{e9} \u{1f600}";
+    let mut w = Writer::buffer(32);
+    w.write_start_object().unwrap();
+    w.write_key(tricky).unwrap();
+    w.write_string(tricky).unwrap();
+    w.write_end_object().unwrap();
+    let bytes = w.finish().unwrap();
+    let mut p = Parser::new(Echo::default());
+    let mut d = &bytes[..];
+    p.receive(&mut d).unwrap();
+    p.close().unwrap();
+    assert_eq!(p.handler().0, [format!("k:{tricky}"), format!("s:{tricky}")]);
+}

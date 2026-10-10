@@ -138,3 +138,49 @@ fn bare_number_with_close() {
 
     assert_eq!(handler.events, vec!["number:42".to_string()]);
 }
+
+/// The parser owns its handler: a boxed handler picked at run time can be
+/// fed chunk by chunk from inside another object and taken back at the end.
+#[test]
+fn parser_owns_a_boxed_handler_across_chunks() {
+    use rjsonparser::{ContentHandler, ParseResult, Parser};
+
+    #[derive(Default)]
+    struct Keys(Vec<String>);
+    impl ContentHandler for Keys {
+        fn key(&mut self, key: &str) -> ParseResult<()> {
+            self.0.push(key.to_string());
+            Ok(())
+        }
+    }
+    trait KeyList: ContentHandler {
+        fn keys(&self) -> &[String];
+    }
+    impl KeyList for Keys {
+        fn keys(&self) -> &[String] {
+            &self.0
+        }
+    }
+
+    struct Response {
+        parser: Parser<Box<dyn KeyList>>,
+    }
+    let mut r = Response { parser: Parser::new(Box::new(Keys::default()) as Box<dyn KeyList>) };
+    for chunk in [&b"{\"a\": 1, \"lo"[..], &b"ng\": [true], \"c\": nu"[..], &b"ll}"[..]] {
+        let mut data = chunk;
+        r.parser.receive(&mut data).unwrap();
+    }
+    r.parser.close().unwrap();
+    assert_eq!(r.parser.handler().keys(), ["a", "long", "c"]);
+    let handler = r.parser.into_handler();
+    assert_eq!(handler.keys().len(), 3);
+
+    // Borrowed handlers still work as before.
+    let mut keys = Keys::default();
+    let mut p = Parser::new(&mut keys);
+    let mut data = &b"{\"x\": 2}"[..];
+    p.receive(&mut data).unwrap();
+    p.close().unwrap();
+    drop(p);
+    assert_eq!(keys.0, ["x"]);
+}

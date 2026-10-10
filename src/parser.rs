@@ -19,8 +19,15 @@ enum BomCheck {
 ///
 /// Parsing events are delivered via [`ContentHandler`] as tokens are recognized.
 /// The parser handles BOM detection, then delegates to an internal tokenizer.
-pub struct Parser<'a, H: ContentHandler + ?Sized> {
-    handler: &'a mut H,
+/// Incremental JSON parser driving a [`ContentHandler`].
+///
+/// The parser owns its handler, so it can live inside another object (a
+/// network response handler, say) and be fed chunk by chunk. Pass `&mut h`
+/// to keep a handler you own elsewhere, `Box<dyn ContentHandler>` for a
+/// handler chosen at run time, or the handler itself; [`Self::handler`] and
+/// [`Self::into_handler`] get it back.
+pub struct Parser<H: ContentHandler> {
+    handler: H,
     leftover: Vec<u8>,
     key_symbol_table: KeySymbolTable,
     limits: ParserLimits,
@@ -34,14 +41,14 @@ pub struct Parser<'a, H: ContentHandler + ?Sized> {
     tokenizer: Option<Tokenizer>,
 }
 
-impl<'a, H: ContentHandler + ?Sized> Parser<'a, H> {
+impl<H: ContentHandler> Parser<H> {
     /// Creates a new JSON parser with a default buffer size of 8KB.
-    pub fn new(handler: &'a mut H) -> Self {
+    pub fn new(handler: H) -> Self {
         Self::with_buffer_size(handler, DEFAULT_BUFFER_SIZE)
     }
 
     /// Creates a new JSON parser with the specified buffer size.
-    pub fn with_buffer_size(handler: &'a mut H, buffer_size: usize) -> Self {
+    pub fn with_buffer_size(handler: H, buffer_size: usize) -> Self {
         assert!(buffer_size > 0, "Buffer size must be positive");
         Self {
             handler,
@@ -57,6 +64,21 @@ impl<'a, H: ContentHandler + ?Sized> Parser<'a, H> {
             underflow: false,
             tokenizer: None,
         }
+    }
+
+    /// The handler the parser is driving.
+    pub fn handler(&self) -> &H {
+        &self.handler
+    }
+
+    /// Mutable access to the handler between chunks.
+    pub fn handler_mut(&mut self) -> &mut H {
+        &mut self.handler
+    }
+
+    /// Take the handler back, dropping the parser.
+    pub fn into_handler(self) -> H {
+        self.handler
     }
 
     /// Sets whether a repeated key within the same object should be treated as a parse error.
@@ -166,7 +188,7 @@ impl<'a, H: ContentHandler + ?Sized> Parser<'a, H> {
 
         let tok = self.tokenizer.as_mut().expect("tokenizer just created");
         tok.receive(
-            self.handler,
+            &mut self.handler,
             &mut self.key_symbol_table,
             &self.limits,
             &self.locator,
@@ -194,7 +216,7 @@ impl<'a, H: ContentHandler + ?Sized> Parser<'a, H> {
         if !self.leftover.is_empty() {
             let mut work = self.leftover.as_slice();
             tok.receive(
-                self.handler,
+                &mut self.handler,
                 &mut self.key_symbol_table,
                 &self.limits,
                 &self.locator,

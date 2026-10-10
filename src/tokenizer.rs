@@ -943,27 +943,52 @@ fn compose_number(
         return Ok(Number::F64(value));
     }
 
-    let mantissa = if has_fraction {
-        ival as f64 + (dval as f64 / mul as f64)
-    } else {
-        ival as f64
-    };
-    let mut value = mantissa;
-    if has_exponent {
-        let signed_exponent = if exp_negative {
-            -(exponent as f64)
-        } else {
-            exponent as f64
-        };
-        if signed_exponent < -290.0 || signed_exponent > 290.0 {
-            let half = signed_exponent / 2.0;
-            value = mantissa * 10f64.powf(half) * 10f64.powf(signed_exponent - half);
-        } else {
-            value = mantissa * 10f64.powf(signed_exponent);
+    // Exact fast path (Clinger): when the digits form an integer below 2^53
+    // and the net power of ten is within 10^22, one correctly rounded
+    // multiply or divide by an exactly representable power gives the same
+    // result as a full parse. Anything else goes through `str::parse`,
+    // which is correctly rounded for every input.
+    const POW10: [f64; 23] = [
+        1e0, 1e1, 1e2, 1e3, 1e4, 1e5, 1e6, 1e7, 1e8, 1e9, 1e10, 1e11, 1e12, 1e13, 1e14, 1e15,
+        1e16, 1e17, 1e18, 1e19, 1e20, 1e21, 1e22,
+    ];
+    let mut frac_digits = 0i32;
+    if has_fraction {
+        let mut m = mul;
+        while m > 1 {
+            m /= 10;
+            frac_digits += 1;
         }
     }
-    if negative {
-        value = -value;
-    }
+    let digits = if has_fraction {
+        (ival as i128) * (mul as i128) + dval as i128
+    } else {
+        ival as i128
+    };
+    let signed_exponent = if !has_exponent {
+        0
+    } else if exp_negative {
+        -exponent
+    } else {
+        exponent
+    };
+    let net = signed_exponent - frac_digits;
+    let value = if digits < (1i128 << 53) && (-22..=22).contains(&net) {
+        let m = digits as f64;
+        let v = if net < 0 {
+            m / POW10[(-net) as usize]
+        } else {
+            m * POW10[net as usize]
+        };
+        if negative {
+            -v
+        } else {
+            v
+        }
+    } else {
+        num_str.parse().map_err(|_| {
+            ParseError::new(format!("Invalid number: {num_str}"))
+        })?
+    };
     Ok(Number::F64(value))
 }

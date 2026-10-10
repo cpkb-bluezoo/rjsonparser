@@ -58,3 +58,51 @@ pub trait ContentHandler {
 pub struct DefaultHandler;
 
 impl ContentHandler for DefaultHandler {}
+
+macro_rules! forward_content_handler {
+    ($target:ty) => {
+        impl<T: ContentHandler + ?Sized> ContentHandler for $target {
+            fn start_object(&mut self) -> ParseResult<()> {
+                (**self).start_object()
+            }
+            fn end_object(&mut self) -> ParseResult<()> {
+                (**self).end_object()
+            }
+            fn start_array(&mut self) -> ParseResult<()> {
+                (**self).start_array()
+            }
+            fn end_array(&mut self) -> ParseResult<()> {
+                (**self).end_array()
+            }
+            fn number_value(&mut self, value: &Number) -> ParseResult<()> {
+                (**self).number_value(value)
+            }
+            fn string_value(&mut self, value: &str) -> ParseResult<()> {
+                (**self).string_value(value)
+            }
+            fn boolean_value(&mut self, value: bool) -> ParseResult<()> {
+                (**self).boolean_value(value)
+            }
+            fn null_value(&mut self) -> ParseResult<()> {
+                (**self).null_value()
+            }
+            fn whitespace(&mut self, whitespace: &str) -> ParseResult<()> {
+                (**self).whitespace(whitespace)
+            }
+            fn key(&mut self, key: &str) -> ParseResult<()> {
+                (**self).key(key)
+            }
+            fn set_locator(&mut self, locator: &dyn Locator) {
+                (**self).set_locator(locator)
+            }
+            fn needs_whitespace(&self) -> bool {
+                (**self).needs_whitespace()
+            }
+        }
+    };
+}
+
+// A borrowed handler drives the parser like an owned one.
+forward_content_handler!(&mut T);
+// A boxed handler drives the parser like an owned one.
+forward_content_handler!(Box<T>);

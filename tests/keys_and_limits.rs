@@ -143,3 +143,53 @@ fn parse_from_read() {
     }
     assert_eq!(handler.keys, vec!["hello"]);
 }
+
+#[test]
+fn many_distinct_keys_exceeding_intern_cap_still_parse() {
+    // Well past KeySymbolTable's MAX_ENTRIES: interning degrades to a no-op,
+    // but every key must still be delivered correctly.
+    let n = 15_000;
+    let body: Vec<String> = (0..n).map(|i| format!("\"key{i}\":{i}")).collect();
+    let json = format!("{{{}}}", body.join(","));
+    let h = parse_all(json.as_bytes()).unwrap();
+    assert_eq!(h.keys.len(), n);
+    assert_eq!(h.keys[0], "key0");
+    assert_eq!(h.keys[n - 1], format!("key{}", n - 1));
+}
+
+#[test]
+fn similar_keys_are_not_conflated() {
+    let h = parse_all(br#"{"ab":1,"ac":2,"bb":3}"#).unwrap();
+    assert_eq!(h.keys, ["ab", "ac", "bb"]);
+}
+
+#[test]
+fn interning_table_stays_correct_across_reset() {
+    let mut handler = RecordingHandler::new();
+    {
+        let mut parser = Parser::new(&mut handler);
+        parser.disable_all_limits();
+        for doc in [&br#"{"widget":1}"#[..], &br#"{"widget":2,"gadget":3}"#[..]] {
+            let mut d = doc;
+            parser.receive(&mut d).unwrap();
+            parser.close().unwrap();
+            parser.reset();
+        }
+    }
+    assert_eq!(handler.keys, ["widget", "widget", "gadget"]);
+}
+
+#[test]
+fn duplicate_check_pops_after_nested_object_closes() {
+    let mut handler = RecordingHandler::new();
+    let mut parser = Parser::new(&mut handler);
+    parser.set_reject_duplicate_keys(true);
+    // "a" inside the nested object is not a duplicate of the outer "a",
+    // but the second outer "a" after it is.
+    let mut ok = &br#"{"a":{"a":1},"b":2}"#[..];
+    parser.receive(&mut ok).unwrap();
+    parser.close().unwrap();
+    parser.reset();
+    let mut dup = &br#"{"a":{"a":1},"a":2}"#[..];
+    assert!(parser.receive(&mut dup).is_err());
+}

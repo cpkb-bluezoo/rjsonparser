@@ -26,6 +26,9 @@ impl ContentHandler for Events {
 }
 
 let mut handler = Events { count: 0 };
+// The parser owns its handler: pass `&mut handler` to keep using it
+// afterwards, or a `Box<dyn ContentHandler>` / the handler itself and get
+// it back with `handler()` / `into_handler()`.
 let mut parser = Parser::new(&mut handler);
 let mut input = &br#"[1,2,3]"#[..];
 parser.receive(&mut input).unwrap();
@@ -82,4 +85,4 @@ cargo test
 
 ## License
 
-LGPL-2.1-or-later. See [LICENSE](LICENSE).
+LGPL-3.0-or-later. See [LICENSE](LICENSE).

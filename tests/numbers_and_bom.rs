@@ -124,3 +124,55 @@ impl Ulp for f64 {
         (next - self).abs()
     }
 }
+
+fn feed_chunks(data: &[u8], chunk: usize) -> bool {
+    parse_chunked_ok(data, chunk)
+}
+
+fn parse_chunked_ok(data: &[u8], chunk: usize) -> bool {
+    common::parse_chunked(data, chunk).is_ok()
+}
+
+#[test]
+fn bom_utf32_rejected() {
+    let le = [0xFFu8, 0xFE, 0x00, 0x00, b'{', 0, 0, 0, b'}', 0, 0, 0];
+    let be = [0x00u8, 0x00, 0xFE, 0xFF, 0, 0, 0, b'{', 0, 0, 0, b'}'];
+    assert!(parse_all(&le).is_err());
+    assert!(parse_all(&be).is_err());
+    for chunk in [1, 2, 3] {
+        assert!(!feed_chunks(&le, chunk), "UTF-32LE @ {chunk}");
+        assert!(!feed_chunks(&be, chunk), "UTF-32BE @ {chunk}");
+    }
+}
+
+#[test]
+fn bom_utf16_rejected_when_split() {
+    let le = [0xFFu8, 0xFE, b'[', 0, b']', 0];
+    let be = [0xFEu8, 0xFF, 0, b'[', 0, b']'];
+    for chunk in [1, 2] {
+        assert!(!feed_chunks(&le, chunk));
+        assert!(!feed_chunks(&be, chunk));
+    }
+}
+
+#[test]
+fn utf8_bom_split_byte_by_byte() {
+    let data = [0xEFu8, 0xBB, 0xBF, b'4', b'2', b' '];
+    assert!(feed_chunks(&data, 1));
+}
+
+#[test]
+fn no_bom_and_no_bom_after_reset() {
+    let mut handler = common::RecordingHandler::new();
+    {
+        let mut parser = Parser::new(&mut handler);
+        for doc in [&b"[1]"[..], &[0xEF, 0xBB, 0xBF, b'[', b'2', b']'][..], &b"[3]"[..]] {
+            let mut d = doc;
+            parser.receive(&mut d).unwrap();
+            parser.close().unwrap();
+            parser.reset();
+        }
+    }
+    let got: Vec<_> = handler.numbers.iter().map(|n| n.as_i32().unwrap()).collect();
+    assert_eq!(got, [1, 2, 3]);
+}
