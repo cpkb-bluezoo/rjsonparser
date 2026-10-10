@@ -7,12 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-10-10
+
 ### Changed
 
 - Relicensed from LGPL-2.1-or-later to LGPL-3.0-or-later, matching jsonparser
   and rmimeparser. `LICENSE` is now the LGPL v3 text and `LICENSE-GPL` carries
   the GPL v3 it incorporates.
-- `Parser` now owns its handler (`Parser<H>`, previously `Parser<'a, H>` over
+- **Breaking:** `Parser` now owns its handler (`Parser<H>`, previously `Parser<'a, H>` over
   `&'a mut H`). Passing `&mut handler` or a `Box<dyn ContentHandler>` still
   works; `handler()`, `handler_mut()` and `into_handler()` give access back.
 
