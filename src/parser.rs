@@ -3,14 +3,14 @@
 use std::io::Read;
 use std::sync::Arc;
 
-use loopbuf::LoopBuf;
+use loopbuf::{LoopBuf, Spans};
 
 use crate::error::{ParseError, ParseResult};
 use crate::handler::ContentHandler;
 use crate::keys::KeySymbolTable;
 use crate::limits::ParserLimits;
 use crate::locator::SharedLocator;
-use crate::tokenizer::{Input, NestToken, Tokenizer, MIN_DECODE_ROOM};
+use crate::tokenizer::{NestToken, Tokenizer, MIN_DECODE_ROOM};
 
 const DEFAULT_BUFFER_SIZE: usize = 8192;
 const DEFAULT_STRING_CHUNK_SIZE: usize = 32768;
@@ -237,9 +237,8 @@ impl<H: ContentHandler> Parser<H> {
             }
         }
 
-        let (a, b) = buf.readable_spans();
         let mut consumed = 0;
-        let result = self.process(Input::new(a, b), &mut consumed);
+        let result = self.process(buf.spans(), &mut consumed);
         buf.advance(consumed);
         result?;
 
@@ -260,7 +259,7 @@ impl<H: ContentHandler> Parser<H> {
     /// Checks the BOM on the first call, creates the tokenizer if needed, then
     /// hands it what is in `input`. `consumed` is advanced past whatever was
     /// used, even if an error is returned.
-    fn process(&mut self, input: Input<'_>, consumed: &mut usize) -> ParseResult<()> {
+    fn process(&mut self, input: Spans<'_>, consumed: &mut usize) -> ParseResult<()> {
         let mut input = input;
         if !self.checked_bom {
             match check_bom(input)? {
@@ -398,21 +397,21 @@ impl<H: ContentHandler> Parser<H> {
 
 /// Checks for a byte order mark. Optimized for UTF-8, and detects UTF-16/32
 /// only to reject them.
-fn check_bom(input: Input<'_>) -> ParseResult<Bom> {
+fn check_bom(input: Spans<'_>) -> ParseResult<Bom> {
     let remaining = input.len();
     if remaining == 0 {
         return Ok(Bom::NeedMore);
     }
-    let b1 = input.get(0);
+    let b1 = input[0];
 
     match b1 {
         // UTF-8 BOM (EF BB BF)
         0xEF => {
             if remaining >= 3 {
-                if input.get(1) == 0xBB && input.get(2) == 0xBF {
+                if input[1] == 0xBB && input[2] == 0xBF {
                     return Ok(Bom::Skip(3));
                 }
-            } else if remaining == 1 || input.get(1) == 0xBB {
+            } else if remaining == 1 || input[1] == 0xBB {
                 return Ok(Bom::NeedMore); // might be a BOM
             }
             Ok(Bom::Skip(0))
@@ -422,7 +421,7 @@ fn check_bom(input: Input<'_>) -> ParseResult<Bom> {
             if remaining < 2 {
                 return Ok(Bom::NeedMore);
             }
-            if input.get(1) == 0xFF {
+            if input[1] == 0xFF {
                 return Err(ParseError::new("UTF-16 BE encoding not supported"));
             }
             Ok(Bom::Skip(0))
@@ -432,11 +431,11 @@ fn check_bom(input: Input<'_>) -> ParseResult<Bom> {
             if remaining < 2 {
                 return Ok(Bom::NeedMore);
             }
-            if input.get(1) == 0xFE {
+            if input[1] == 0xFE {
                 if remaining < 4 {
                     return Ok(Bom::NeedMore);
                 }
-                if input.get(2) == 0x00 && input.get(3) == 0x00 {
+                if input[2] == 0x00 && input[3] == 0x00 {
                     return Err(ParseError::new("UTF-32 LE encoding not supported"));
                 }
                 return Err(ParseError::new("UTF-16 LE encoding not supported"));
@@ -448,11 +447,11 @@ fn check_bom(input: Input<'_>) -> ParseResult<Bom> {
             if remaining < 2 {
                 return Ok(Bom::NeedMore);
             }
-            if input.get(1) == 0x00 {
+            if input[1] == 0x00 {
                 if remaining < 4 {
                     return Ok(Bom::NeedMore);
                 }
-                if input.get(2) == 0xFE && input.get(3) == 0xFF {
+                if input[2] == 0xFE && input[3] == 0xFF {
                     return Err(ParseError::new("UTF-32 BE encoding not supported"));
                 }
             }

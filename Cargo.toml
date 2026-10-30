@@ -20,6 +20,7 @@ path = "tests/json_test_suite.rs"
 harness = false
 
 [dependencies]
-loopbuf = "0.1"
+# `path` until a loopbuf release includes `Spans`, `window` and `io::{Read, Write}`
+loopbuf = { version = "0.1", path = "../loopbuf" }
 
 [dev-dependencies]

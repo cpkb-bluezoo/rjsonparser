@@ -24,6 +24,7 @@ use crate::keys::{KeySymbolTable, MAX_KEY_BYTES};
 use crate::limits::ParserLimits;
 use crate::locator::{Locator, SharedLocator};
 use crate::number::Number;
+use loopbuf::Spans;
 
 const KEY_INTERN_DISABLE_THRESHOLD: i32 = 64;
 
@@ -37,68 +38,6 @@ pub(crate) const MIN_DECODE_ROOM: usize = 16;
 pub(crate) enum NestToken {
     StartObject,
     StartArray,
-}
-
-/// The ring's readable bytes: up to two contiguous spans, the second empty
-/// unless the content wraps the ring's physical end. Indexing through this
-/// is what lets a token straddle the wrap without the bytes being moved.
-#[derive(Clone, Copy)]
-pub(crate) struct Input<'a> {
-    a: &'a [u8],
-    b: &'a [u8],
-}
-
-impl<'a> Input<'a> {
-    pub(crate) fn new(a: &'a [u8], b: &'a [u8]) -> Self {
-        Self { a, b }
-    }
-
-    pub(crate) fn len(&self) -> usize {
-        self.a.len() + self.b.len()
-    }
-
-    pub(crate) fn get(&self, i: usize) -> u8 {
-        if i < self.a.len() {
-            self.a[i]
-        } else {
-            self.b[i - self.a.len()]
-        }
-    }
-
-    /// The contiguous bytes from `i` to the end of whichever span holds it.
-    fn span_from(&self, i: usize) -> &'a [u8] {
-        if i < self.a.len() {
-            &self.a[i..]
-        } else {
-            &self.b[i - self.a.len()..]
-        }
-    }
-
-    /// `[from, to)` as one slice, if it does not straddle the wrap.
-    fn contiguous(&self, from: usize, to: usize) -> Option<&'a [u8]> {
-        let split = self.a.len();
-        if to <= split {
-            Some(&self.a[from..to])
-        } else if from >= split {
-            Some(&self.b[from - split..to - split])
-        } else {
-            None
-        }
-    }
-
-    pub(crate) fn skip(&self, n: usize) -> Input<'a> {
-        if n >= self.a.len() {
-            Input {
-                a: &self.b[n - self.a.len()..],
-                b: &[],
-            }
-        } else {
-            Input {
-                a: &self.a[n..],
-                b: self.b,
-            }
-        }
-    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -457,7 +396,7 @@ impl Tokenizer {
         key_symbol_table: &mut KeySymbolTable,
         limits: &ParserLimits,
         locator: &SharedLocator,
-        input: Input<'_>,
+        input: Spans<'_>,
         consumed: &mut usize,
     ) -> ParseResult<()> {
         let total = input.len();
@@ -475,7 +414,7 @@ impl Tokenizer {
                 continue;
             }
 
-            let b = input.get(*consumed);
+            let b = input[*consumed];
             if matches!(b, b' ' | b'\n' | b'\t' | b'\r') {
                 self.process_whitespace(handler, locator, input, consumed)?;
                 continue;
@@ -518,7 +457,7 @@ impl Tokenizer {
         key_symbol_table: &mut KeySymbolTable,
         limits: &ParserLimits,
         locator: &SharedLocator,
-        input: Input<'_>,
+        input: Spans<'_>,
         consumed: &mut usize,
         b: u8,
     ) -> ParseResult<bool> {
@@ -718,7 +657,7 @@ impl Tokenizer {
         handler: &mut H,
         limits: &ParserLimits,
         locator: &SharedLocator,
-        input: Input<'_>,
+        input: Spans<'_>,
         consumed: &mut usize,
         rest: &[u8],
         value: Option<bool>,
@@ -726,7 +665,7 @@ impl Tokenizer {
         let first = *consumed + 1;
         let available = input.len() - first;
         for (i, &expected) in rest.iter().enumerate().take(available) {
-            if input.get(first + i) != expected {
+            if input[first + i] != expected {
                 return Err(ParseError::new("Invalid literal"));
             }
         }
@@ -753,7 +692,7 @@ impl Tokenizer {
         &mut self,
         handler: &mut H,
         locator: &SharedLocator,
-        input: Input<'_>,
+        input: Spans<'_>,
         consumed: &mut usize,
     ) -> ParseResult<()> {
         let start = *consumed;
@@ -763,7 +702,7 @@ impl Tokenizer {
         let mut after_cr = self.after_cr;
         let mut p = start;
         while p < total {
-            match input.get(p) {
+            match input[p] {
                 // CR, LF and CRLF are each one line break; `after_cr` carries
                 // the CR across calls so the pair is not counted twice if a
                 // chunk boundary falls between them
@@ -822,7 +761,7 @@ impl Tokenizer {
         handler: &mut H,
         limits: &ParserLimits,
         locator: &SharedLocator,
-        input: Input<'_>,
+        input: Spans<'_>,
         consumed: &mut usize,
     ) -> ParseResult<bool> {
         self.ensure_chars();
@@ -855,7 +794,7 @@ impl Tokenizer {
                 return Ok(false);
             }
 
-            let b = input.get(run_end);
+            let b = input[run_end];
             if b == b'"' {
                 self.flush_chars(handler)?;
                 *consumed = run_end + 1;
@@ -900,7 +839,7 @@ impl Tokenizer {
     fn decode_run<H: ContentHandler + ?Sized>(
         &mut self,
         mut handler: Option<&mut H>,
-        input: Input<'_>,
+        input: Spans<'_>,
         from: usize,
         to: usize,
     ) -> ParseResult<(usize, usize)> {
@@ -985,7 +924,7 @@ impl Tokenizer {
         key_symbol_table: &mut KeySymbolTable,
         limits: &ParserLimits,
         locator: &SharedLocator,
-        input: Input<'_>,
+        input: Spans<'_>,
         consumed: &mut usize,
     ) -> ParseResult<bool> {
         let total = input.len();
@@ -1006,7 +945,7 @@ impl Tokenizer {
                     "Maximum key length exceeded: {limit}"
                 )));
             }
-            let b = input.get(i);
+            let b = input[i];
             if b == b'"' {
                 break i;
             }
@@ -1026,7 +965,7 @@ impl Tokenizer {
 
         // Interning needs the key verbatim, contiguous and short
         let interned = if !has_escape && !self.key_intern_disabled && end - start <= MAX_KEY_BYTES {
-            input.contiguous(start, end)
+            input.contiguous(start..end)
         } else {
             None
         };
@@ -1072,7 +1011,7 @@ impl Tokenizer {
     /// Decodes the key content `[start, end)` (all of it present, escapes
     /// included) into the character buffer. Returns the key's length in the
     /// source, in UTF-16 units, for the locator.
-    fn decode_key(&mut self, input: Input<'_>, start: usize, end: usize) -> ParseResult<usize> {
+    fn decode_key(&mut self, input: Spans<'_>, start: usize, end: usize) -> ParseResult<usize> {
         let mut src_units = 0;
         let mut p = start;
         while p < end {
@@ -1113,7 +1052,7 @@ impl Tokenizer {
         handler: &mut H,
         limits: &ParserLimits,
         locator: &SharedLocator,
-        input: Input<'_>,
+        input: Spans<'_>,
         consumed: &mut usize,
     ) -> ParseResult<bool> {
         let limit = limits.max_number_length;
@@ -1134,7 +1073,7 @@ impl Tokenizer {
                     }
                 }
             }
-            let b = input.get(*consumed);
+            let b = input[*consumed];
             let digit = b.wrapping_sub(b'0');
             let is_digit = digit <= 9;
             match n.stage {
@@ -1296,7 +1235,7 @@ fn utf16_len(s: &str) -> usize {
 /// content (a quote, a backslash or a control character), or `to` if there is
 /// none. UTF-8 is self-synchronizing, so none of those bytes can occur inside a
 /// multi-byte sequence.
-fn scan_plain(input: Input<'_>, from: usize, to: usize) -> usize {
+fn scan_plain(input: Spans<'_>, from: usize, to: usize) -> usize {
     let mut i = from;
     while i < to {
         let span = input.span_from(i);
@@ -1314,20 +1253,20 @@ fn scan_plain(input: Input<'_>, from: usize, to: usize) -> usize {
 
 /// Decodes the one character starting at `p`, which may straddle the ring's
 /// wrap. `None` if too few bytes are present to tell yet.
-fn decode_char_at(input: Input<'_>, p: usize) -> ParseResult<Option<(char, usize)>> {
-    let need = match input.get(p) {
+fn decode_char_at(input: Spans<'_>, p: usize) -> ParseResult<Option<(char, usize)>> {
+    let need = match input[p] {
         0xC2..=0xDF => 2,
         0xE0..=0xEF => 3,
         0xF0..=0xF4 => 4,
         _ => return Err(malformed_utf8()),
     };
     let mut bytes = [0u8; 4];
-    bytes[0] = input.get(p);
+    bytes[0] = input[p];
     for (k, slot) in bytes.iter_mut().enumerate().take(need).skip(1) {
         if p + k >= input.len() {
             return Ok(None);
         }
-        let b = input.get(p + k);
+        let b = input[p + k];
         if b & 0xC0 != 0x80 {
             return Err(malformed_utf8());
         }
@@ -1350,7 +1289,7 @@ fn unhex(b: u8) -> ParseResult<u32> {
 
 /// Up to 6 bytes starting at `i` (the longest escape), copied out so they can
 /// be examined without a ring-span check per byte, wherever they sit.
-fn peek_escape(input: Input<'_>, i: usize) -> ([u8; 6], usize) {
+fn peek_escape(input: Spans<'_>, i: usize) -> ([u8; 6], usize) {
     let mut bytes = [0u8; 6];
     let span = input.span_from(i);
     if span.len() >= 6 {
@@ -1362,7 +1301,7 @@ fn peek_escape(input: Input<'_>, i: usize) -> ([u8; 6], usize) {
     bytes[..n].copy_from_slice(span);
     // the rest, if the escape straddles the wrap
     while n < 6 && i + n < input.len() {
-        bytes[n] = input.get(i + n);
+        bytes[n] = input[i + n];
         n += 1;
     }
     (bytes, n)
@@ -1443,7 +1382,7 @@ fn low_surrogate_follows(bytes: &[u8]) -> Follow {
 /// if more data is needed to tell. An escaped surrogate pair is resolved
 /// together so no content call ends between its halves. A surrogate with no
 /// partner cannot be a Rust `char`, so it becomes U+FFFD.
-fn resolve_escape(input: Input<'_>, i: usize) -> ParseResult<Option<(char, usize)>> {
+fn resolve_escape(input: Spans<'_>, i: usize) -> ParseResult<Option<(char, usize)>> {
     let (bytes, n) = peek_escape(input, i);
     let (unit, len) = match parse_escape(&bytes[..n])? {
         Escape::NeedMore => return Ok(None),
