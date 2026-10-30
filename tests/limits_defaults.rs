@@ -1,5 +1,7 @@
 //! Resource-limit tests ported from the Java LimitsTest.
 
+use loopbuf::LoopBuf;
+
 use rjsonparser::{ContentHandler, DefaultHandler, Parser};
 
 fn nested_array(depth: usize) -> String {
@@ -20,8 +22,10 @@ fn big_array(elements: usize) -> String {
 }
 
 fn run<H: ContentHandler>(p: &mut Parser<H>, json: &str) -> bool {
-    let mut data = json.as_bytes();
-    p.receive(&mut data).is_ok() && p.close().is_ok()
+    let data = json.as_bytes();
+    let mut buf = LoopBuf::with_capacity(data.len().max(1));
+    buf.extend_from_slice(data);
+    p.receive(&mut buf).is_ok() && p.close(&mut buf).is_ok()
 }
 
 fn ok(configure: impl FnOnce(&mut Parser<DefaultHandler>), json: &str) -> bool {
@@ -82,10 +86,11 @@ fn document_length_custom_and_default() {
 fn document_length_counts_across_chunks() {
     let mut p = Parser::new(DefaultHandler);
     p.set_max_document_length(6);
-    let mut a = &b"[1,2"[..];
-    p.receive(&mut a).unwrap();
-    let mut b = &b",3]"[..];
-    assert!(p.receive(&mut b).is_err());
+    let mut buf = LoopBuf::with_capacity(7);
+    buf.extend_from_slice(b"[1,2");
+    p.receive(&mut buf).unwrap();
+    buf.extend_from_slice(b",3]");
+    assert!(p.receive(&mut buf).is_err());
 }
 
 #[test]

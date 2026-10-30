@@ -5,6 +5,11 @@ const FNV_PRIME: u32 = 0x0100_0193;
 const MAX_ENTRIES: usize = 10_000;
 const DEFAULT_CAPACITY: usize = 64;
 
+/// Only keys of up to this many bytes are interned: the table lives as long
+/// as the parser and holds up to [`MAX_ENTRIES`] keys, so this keeps it small
+/// however long keys are allowed to be.
+pub const MAX_KEY_BYTES: usize = 64;
+
 pub struct KeySymbolTable {
     hashes: Vec<u32>,
     keys: Vec<Option<Vec<u8>>>,
@@ -31,6 +36,11 @@ impl KeySymbolTable {
         self.keys = vec![None; capacity];
         self.values = vec![None; capacity];
         self.mask = capacity - 1;
+    }
+
+    #[cfg(test)]
+    pub fn len(&self) -> usize {
+        self.size
     }
 
     pub fn initial_hash() -> u32 {

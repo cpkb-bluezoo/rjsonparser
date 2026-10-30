@@ -7,11 +7,12 @@ Push-based JSON parser and writer for Rust.
 - Incremental `receive()` parsing — SAX-style events, no DOM
 - [`ContentHandler`](src/handler.rs) callbacks (Java `JSONContentHandler`)
 - Symmetric `Writer` for encoding (`JSONWriter`)
-- Zero dependencies beyond the Rust standard library
+- Only [`loopbuf`](https://github.com/cpkb-bluezoo/loopbuf) as a dependency: the caller owns a fixed-capacity ring, and the parser leaves whatever it cannot use yet in it
 
 ## Parser
 
 ```rust
+use loopbuf::LoopBuf;
 use rjsonparser::{ContentHandler, Number, Parser, ParseResult};
 
 struct Events {
@@ -30,24 +31,56 @@ let mut handler = Events { count: 0 };
 // afterwards, or a `Box<dyn ContentHandler>` / the handler itself and get
 // it back with `handler()` / `into_handler()`.
 let mut parser = Parser::new(&mut handler);
-let mut input = &br#"[1,2,3]"#[..];
-parser.receive(&mut input).unwrap();
-parser.close().unwrap();
+let mut buf = LoopBuf::with_capacity(4096);
+buf.extend_from_slice(b"[1,2,3]");
+parser.receive(&mut buf).unwrap();
+parser.close(&mut buf).unwrap();
 assert_eq!(handler.count, 3);
 ```
 
-### Streaming (NIO-style buffer contract)
+### Streaming (caller-owned buffer contract)
+
+The caller owns the [`LoopBuf`](https://github.com/cpkb-bluezoo/loopbuf) ring.
+`receive` consumes only whole tokens and leaves anything incomplete (a key or
+literal that is not finished, the start of an escape sequence or multi-byte
+character, a partial byte order mark) in the ring. Read more in after it and
+call `receive` again; reclaiming consumed space moves no data.
 
 ```rust
-// Compact/flip pattern: unconsumed bytes are also retained in the parser
-// leftover so close() can finalize a trailing number like `42`.
 loop {
-    // read more bytes into `buf`...
-    let mut slice = &buf[..filled];
-    parser.receive(&mut slice)?;
+    let (spare, _) = buf.spare_capacity_mut();
+    let n = reader.read(spare)?;
+    if n == 0 {
+        break;
+    }
+    buf.commit_write(n);
+    parser.receive(&mut buf)?;
 }
-parser.close()?;
+parser.close(&mut buf)?; // completes a trailing number like `42`
 ```
+
+### Memory and limits
+
+Memory does not grow with document size or string length. Besides the ring,
+the parser has one character buffer of a fixed size
+(`set_string_chunk_size`, 32768 bytes by default). String content is decoded
+into it and handed to the handler as a `&str` as it arrives
+(`start_string_value`, `string_value_content`, `end_string_value`), so a string
+of any length costs the same.
+
+Keys are delivered whole, so a key must fit both the ring and that buffer.
+The ring must be larger than the longest key (`set_max_name_length`, 4096 raw
+bytes by default) plus its quotes. If it is full of one unfinished token,
+`receive` returns a "receive buffer too small" error instead of buffering for
+itself. Strings are unlimited by default (`set_max_string_length` is an
+opt-in cap for handlers that accumulate them).
+
+An escaped surrogate pair is delivered as one character. A surrogate with no
+partner cannot be represented in a Rust `&str`, so it is reported as U+FFFD.
+
+Positions: a handler may keep the `Locator` from `set_locator` and read it
+inside any callback. Lines and columns start at 1, a column counts UTF-16
+units, and the position is where the event ends.
 
 ## Writer
 

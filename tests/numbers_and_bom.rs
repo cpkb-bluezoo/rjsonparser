@@ -1,5 +1,7 @@
 mod common;
 
+use loopbuf::LoopBuf;
+
 use common::{parse_all, parse_number_value};
 use rjsonparser::{Number, Parser};
 
@@ -87,11 +89,12 @@ fn bom_utf8_split() {
     {
         let mut parser = Parser::new(&mut handler);
         parser.disable_all_limits();
-        let mut a = &[0xEFu8, 0xBB][..];
-        parser.receive(&mut a).unwrap();
-        let mut b = &[0xBFu8, b'[', b'4', b'2', b']'][..];
-        parser.receive(&mut b).unwrap();
-        parser.close().unwrap();
+        let mut buf = LoopBuf::with_capacity(7);
+        buf.extend_from_slice(&[0xEFu8, 0xBB]);
+        parser.receive(&mut buf).unwrap();
+        buf.extend_from_slice(&[0xBFu8, b'[', b'4', b'2', b']']);
+        parser.receive(&mut buf).unwrap();
+        parser.close(&mut buf).unwrap();
     }
     assert_eq!(handler.numbers[0].as_i32(), Some(42));
 }
@@ -167,9 +170,10 @@ fn no_bom_and_no_bom_after_reset() {
     {
         let mut parser = Parser::new(&mut handler);
         for doc in [&b"[1]"[..], &[0xEF, 0xBB, 0xBF, b'[', b'2', b']'][..], &b"[3]"[..]] {
-            let mut d = doc;
-            parser.receive(&mut d).unwrap();
-            parser.close().unwrap();
+            let mut buf = LoopBuf::with_capacity(doc.len());
+            buf.extend_from_slice(doc);
+            parser.receive(&mut buf).unwrap();
+            parser.close(&mut buf).unwrap();
             parser.reset();
         }
     }

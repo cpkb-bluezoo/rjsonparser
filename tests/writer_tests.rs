@@ -187,14 +187,18 @@ fn indent_tabs_output() {
 fn round_trip_through_parser() {
     use rjsonparser::{ContentHandler, ParseResult, Parser};
     #[derive(Default)]
-    struct Echo(Vec<String>);
+    struct Echo(Vec<String>, String);
     impl ContentHandler for Echo {
-        fn key(&mut self, k: &str) -> ParseResult<()> {
-            self.0.push(format!("k:{k}"));
+        fn key(&mut self, key: &str) -> ParseResult<()> {
+            self.0.push(format!("k:{key}"));
             Ok(())
         }
-        fn string_value(&mut self, v: &str) -> ParseResult<()> {
-            self.0.push(format!("s:{v}"));
+        fn string_value_content(&mut self, chunk: &str) -> ParseResult<()> {
+            self.1.push_str(chunk);
+            Ok(())
+        }
+        fn end_string_value(&mut self) -> ParseResult<()> {
+            self.0.push(format!("s:{}", std::mem::take(&mut self.1)));
             Ok(())
         }
     }
@@ -206,8 +210,9 @@ fn round_trip_through_parser() {
     w.write_end_object().unwrap();
     let bytes = w.finish().unwrap();
     let mut p = Parser::new(Echo::default());
-    let mut d = &bytes[..];
-    p.receive(&mut d).unwrap();
-    p.close().unwrap();
+    let mut buf = loopbuf::LoopBuf::with_capacity(bytes.len());
+    buf.extend_from_slice(&bytes);
+    p.receive(&mut buf).unwrap();
+    p.close(&mut buf).unwrap();
     assert_eq!(p.handler().0, [format!("k:{tricky}"), format!("s:{tricky}")]);
 }

@@ -44,8 +44,14 @@ fn huge_non_ascii_string_in_small_chunks() {
 }
 
 #[test]
-fn huge_key_in_small_chunks() {
+fn a_key_is_whole_or_it_is_an_error() {
+    // A key is reported in one call, so unlike a string it cannot stream:
+    // it must fit the character buffer, and the default limit rejects one
+    // this long as soon as it is seen rather than waiting for its end.
     let json = format!("{{\"{}\":1}}", "k".repeat(SIZE));
-    let h = timed(json.as_bytes());
-    assert_eq!(h.keys[0].len(), SIZE);
+    let mut parser = rjsonparser::Parser::new(rjsonparser::DefaultHandler);
+    let start = Instant::now();
+    let err = parser.parse(json.as_bytes()).unwrap_err();
+    assert!(err.message().contains("Maximum key length"), "{err}");
+    assert!(start.elapsed() < BUDGET);
 }

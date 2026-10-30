@@ -2,6 +2,7 @@
 //!
 //! No `build.rs` — suite loading only happens when this integration test binary runs.
 
+use loopbuf::LoopBuf;
 use rjsonparser::{DefaultHandler, Parser};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -28,9 +29,10 @@ fn try_parse(bytes: &[u8]) -> Result<(), String> {
     let mut handler = DefaultHandler;
     let mut parser = Parser::new(&mut handler);
     parser.disable_all_limits();
-    let mut data = bytes;
-    parser.receive(&mut data).map_err(|e| e.to_string())?;
-    parser.close().map_err(|e| e.to_string())
+    let mut buf = LoopBuf::with_capacity(bytes.len().max(1));
+    buf.extend_from_slice(bytes);
+    parser.receive(&mut buf).map_err(|e| e.to_string())?;
+    parser.close(&mut buf).map_err(|e| e.to_string())
 }
 
 fn run_case(path: &Path, expect: Expect) -> Result<(), String> {

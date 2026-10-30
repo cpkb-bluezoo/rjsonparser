@@ -3,15 +3,21 @@
 //! **rjsonparser** ports the [jsonparser](https://github.com/cpkb-bluezoo/jsonparser)
 //! Java library to Rust, using the same streaming design:
 //!
-//! - Incremental [`Parser::receive`] parsing — constant memory, no internal buffering
-//!   of incomplete tokens beyond the caller-visible leftover
+//! - Incremental [`Parser::receive`] parsing straight out of a caller-owned
+//!   [`loopbuf::LoopBuf`] ring -- the same ring every call, no copy at the
+//!   `receive` boundary at all. The parser consumes only whole tokens and
+//!   leaves anything incomplete in the ring to be presented again with more
+//!   data; it holds none of the document's bytes itself
+//! - One fixed-size character buffer for string content, handed to the
+//!   handler as a `&str`, so memory does not grow with the size of a string
 //! - [`ContentHandler`] callbacks instead of DOM trees
 //! - Symmetric [`Writer`] for encoding
-//! - Zero dependencies beyond the Rust standard library
+//! - Only [`loopbuf`] as a runtime dependency, used for the feed buffer
 //!
 //! # Example
 //!
 //! ```
+//! use loopbuf::LoopBuf;
 //! use rjsonparser::{ContentHandler, Number, Parser, Writer};
 //!
 //! struct Events {
@@ -40,9 +46,10 @@
 //! let json = br#"{"a":1}"#;
 //! let mut handler = Events { log: Vec::new() };
 //! let mut parser = Parser::new(&mut handler);
-//! let mut input = &json[..];
-//! parser.receive(&mut input).unwrap();
-//! parser.close().unwrap();
+//! let mut buf = LoopBuf::with_capacity(64);
+//! buf.extend_from_slice(json);
+//! parser.receive(&mut buf).unwrap();
+//! parser.close(&mut buf).unwrap();
 //! ```
 
 mod keys;

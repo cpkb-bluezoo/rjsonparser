@@ -19,4 +19,7 @@ name = "json_test_suite"
 path = "tests/json_test_suite.rs"
 harness = false
 
+[dependencies]
+loopbuf = "0.1"
+
 [dev-dependencies]

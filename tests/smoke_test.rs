@@ -1,8 +1,10 @@
+use loopbuf::LoopBuf;
 use rjsonparser::{ContentHandler, Number, Parser, Writer};
 
 #[derive(Default)]
 struct EventRecorder {
     events: Vec<String>,
+    string_scratch: String,
 }
 
 impl ContentHandler for EventRecorder {
@@ -31,8 +33,13 @@ impl ContentHandler for EventRecorder {
         Ok(())
     }
 
-    fn string_value(&mut self, value: &str) -> rjsonparser::ParseResult<()> {
-        self.events.push(format!("string:{value}"));
+    fn string_value_content(&mut self, chunk: &str) -> rjsonparser::ParseResult<()> {
+        self.string_scratch.push_str(chunk);
+        Ok(())
+    }
+
+    fn end_string_value(&mut self) -> rjsonparser::ParseResult<()> {
+        self.events.push(format!("string:{}", std::mem::take(&mut self.string_scratch)));
         Ok(())
     }
 
@@ -57,9 +64,10 @@ fn parse_object_records_events() {
     let json = br#"{"a":1}"#;
     let mut handler = EventRecorder::default();
     let mut parser = Parser::new(&mut handler);
-    let mut input = &json[..];
-    parser.receive(&mut input).unwrap();
-    parser.close().unwrap();
+    let mut buf = LoopBuf::with_capacity(json.len());
+    buf.extend_from_slice(json);
+    parser.receive(&mut buf).unwrap();
+    parser.close(&mut buf).unwrap();
 
     assert_eq!(
         handler.events,
@@ -77,14 +85,15 @@ fn chunked_receive() {
     let json = br#"{"a":1}"#;
     let mut handler = EventRecorder::default();
     let mut parser = Parser::new(&mut handler);
+    let mut buf = LoopBuf::with_capacity(json.len());
 
-    let mut chunk1 = &json[..3];
-    parser.receive(&mut chunk1).unwrap();
+    buf.extend_from_slice(&json[..3]);
+    parser.receive(&mut buf).unwrap();
     assert!(parser.is_underflow());
 
-    let mut chunk2 = &json[3..];
-    parser.receive(&mut chunk2).unwrap();
-    parser.close().unwrap();
+    buf.extend_from_slice(&json[3..]);
+    parser.receive(&mut buf).unwrap();
+    parser.close(&mut buf).unwrap();
 
     assert_eq!(
         handler.events,
@@ -110,9 +119,10 @@ fn writer_roundtrip_basic() {
 
     let mut handler = EventRecorder::default();
     let mut parser = Parser::new(&mut handler);
-    let mut input = bytes.as_slice();
-    parser.receive(&mut input).unwrap();
-    parser.close().unwrap();
+    let mut buf = LoopBuf::with_capacity(bytes.len());
+    buf.extend_from_slice(&bytes);
+    parser.receive(&mut buf).unwrap();
+    parser.close(&mut buf).unwrap();
 
     assert_eq!(
         handler.events,
@@ -132,9 +142,10 @@ fn bare_number_with_close() {
     let json = b"42";
     let mut handler = EventRecorder::default();
     let mut parser = Parser::new(&mut handler);
-    let mut input = &json[..];
-    parser.receive(&mut input).unwrap();
-    parser.close().unwrap();
+    let mut buf = LoopBuf::with_capacity(json.len());
+    buf.extend_from_slice(json);
+    parser.receive(&mut buf).unwrap();
+    parser.close(&mut buf).unwrap();
 
     assert_eq!(handler.events, vec!["number:42".to_string()]);
 }
@@ -166,11 +177,14 @@ fn parser_owns_a_boxed_handler_across_chunks() {
         parser: Parser<Box<dyn KeyList>>,
     }
     let mut r = Response { parser: Parser::new(Box::new(Keys::default()) as Box<dyn KeyList>) };
-    for chunk in [&b"{\"a\": 1, \"lo"[..], &b"ng\": [true], \"c\": nu"[..], &b"ll}"[..]] {
-        let mut data = chunk;
-        r.parser.receive(&mut data).unwrap();
+    let chunks = [&b"{\"a\": 1, \"lo"[..], &b"ng\": [true], \"c\": nu"[..], &b"ll}"[..]];
+    let total_len: usize = chunks.iter().map(|c| c.len()).sum();
+    let mut buf = LoopBuf::with_capacity(total_len);
+    for chunk in chunks {
+        buf.extend_from_slice(chunk);
+        r.parser.receive(&mut buf).unwrap();
     }
-    r.parser.close().unwrap();
+    r.parser.close(&mut buf).unwrap();
     assert_eq!(r.parser.handler().keys(), ["a", "long", "c"]);
     let handler = r.parser.into_handler();
     assert_eq!(handler.keys().len(), 3);
@@ -178,9 +192,11 @@ fn parser_owns_a_boxed_handler_across_chunks() {
     // Borrowed handlers still work as before.
     let mut keys = Keys::default();
     let mut p = Parser::new(&mut keys);
-    let mut data = &b"{\"x\": 2}"[..];
-    p.receive(&mut data).unwrap();
-    p.close().unwrap();
+    let data = &b"{\"x\": 2}"[..];
+    let mut buf = LoopBuf::with_capacity(data.len());
+    buf.extend_from_slice(data);
+    p.receive(&mut buf).unwrap();
+    p.close(&mut buf).unwrap();
     drop(p);
     assert_eq!(keys.0, ["x"]);
 }

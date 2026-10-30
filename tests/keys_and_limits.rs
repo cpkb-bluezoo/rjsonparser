@@ -1,7 +1,19 @@
 mod common;
 
+use loopbuf::LoopBuf;
+
 use common::{parse_all, RecordingHandler};
 use rjsonparser::{ContentHandler, Parser};
+
+/// Feeds `data` to `parser` through a freshly allocated ring sized to fit
+/// it all, returning that ring so the caller can pass the same one to
+/// `close()` afterward if needed.
+fn feed<H: ContentHandler>(parser: &mut Parser<H>, data: &[u8]) -> (rjsonparser::ParseResult<()>, LoopBuf) {
+    let mut buf = LoopBuf::with_capacity(data.len().max(1));
+    buf.extend_from_slice(data);
+    let result = parser.receive(&mut buf);
+    (result, buf)
+}
 
 #[test]
 fn duplicate_keys_allowed_by_default() {
@@ -16,8 +28,22 @@ fn duplicate_keys_rejected_when_enabled() {
     let mut parser = Parser::new(&mut handler);
     parser.disable_all_limits();
     parser.set_reject_duplicate_keys(true);
-    let mut data = &br#"{"a":1,"a":2}"#[..];
-    let err = parser.receive(&mut data).unwrap_err();
+    let (result, _buf) = feed(&mut parser, br#"{"a":1,"a":2}"#);
+    let err = result.unwrap_err();
+    assert!(err.message().contains("Duplicate key"));
+}
+
+#[test]
+fn duplicate_keys_rejected_when_one_key_uses_an_escape() {
+    // "a" and "\u0061" both decode to the same key -- the duplicate
+    // check must still catch this on the escape-decoding path, not only
+    // the plain/interning fast path.
+    let mut handler = RecordingHandler::new();
+    let mut parser = Parser::new(&mut handler);
+    parser.disable_all_limits();
+    parser.set_reject_duplicate_keys(true);
+    let (result, _buf) = feed(&mut parser, br#"{"a":1,"\u0061":2}"#);
+    let err = result.unwrap_err();
     assert!(err.message().contains("Duplicate key"));
 }
 
@@ -28,9 +54,9 @@ fn duplicate_keys_scoped_per_object() {
         let mut parser = Parser::new(&mut handler);
         parser.disable_all_limits();
         parser.set_reject_duplicate_keys(true);
-        let mut data = &br#"{"a":{"a":1},"b":2}"#[..];
-        parser.receive(&mut data).unwrap();
-        parser.close().unwrap();
+        let (result, mut buf) = feed(&mut parser, br#"{"a":{"a":1},"b":2}"#);
+        result.unwrap();
+        parser.close(&mut buf).unwrap();
     }
     assert_eq!(handler.keys, vec!["a", "a", "b"]);
 }
@@ -56,8 +82,8 @@ fn limits_nesting_depth() {
     let mut handler = RecordingHandler::new();
     let mut parser = Parser::new(&mut handler);
     parser.set_max_nesting_depth(2);
-    let mut data = &b"[[[1]]]"[..];
-    assert!(parser.receive(&mut data).is_err());
+    let (result, _buf) = feed(&mut parser, b"[[[1]]]");
+    assert!(result.is_err());
 }
 
 #[test]
@@ -65,8 +91,8 @@ fn limits_string_length() {
     let mut handler = RecordingHandler::new();
     let mut parser = Parser::new(&mut handler);
     parser.set_max_string_length(5);
-    let mut data = &br#""abcdef""#[..];
-    assert!(parser.receive(&mut data).is_err());
+    let (result, _buf) = feed(&mut parser, br#""abcdef""#);
+    assert!(result.is_err());
 }
 
 #[test]
@@ -74,9 +100,9 @@ fn limits_number_length() {
     let mut handler = RecordingHandler::new();
     let mut parser = Parser::new(&mut handler);
     parser.set_max_number_length(3);
-    let mut data = &b"1234"[..];
-    parser.receive(&mut data).unwrap(); // may underflow until close
-    assert!(parser.close().is_err());
+    // a number is read a byte at a time, so it is rejected as soon as it is too long
+    let (result, _buf) = feed(&mut parser, b"1234");
+    assert!(result.is_err());
 }
 
 #[test]
@@ -84,8 +110,8 @@ fn limits_document_length() {
     let mut handler = RecordingHandler::new();
     let mut parser = Parser::new(&mut handler);
     parser.set_max_document_length(3);
-    let mut data = &b"1234"[..];
-    assert!(parser.receive(&mut data).is_err());
+    let (result, _buf) = feed(&mut parser, b"1234");
+    assert!(result.is_err());
 }
 
 #[test]
@@ -93,8 +119,8 @@ fn limits_token_count() {
     let mut handler = RecordingHandler::new();
     let mut parser = Parser::new(&mut handler);
     parser.set_max_token_count(2);
-    let mut data = &b"[1,2,3]"[..];
-    assert!(parser.receive(&mut data).is_err());
+    let (result, _buf) = feed(&mut parser, b"[1,2,3]");
+    assert!(result.is_err());
 }
 
 #[test]
@@ -110,13 +136,13 @@ fn reset_reuses_parser() {
     {
         let mut parser = Parser::new(&mut handler);
         parser.disable_all_limits();
-        let mut d1 = &b"1"[..];
-        parser.receive(&mut d1).unwrap();
-        parser.close().unwrap();
+        let (result, mut buf1) = feed(&mut parser, b"1");
+        result.unwrap();
+        parser.close(&mut buf1).unwrap();
         parser.reset();
-        let mut d2 = &b"2"[..];
-        parser.receive(&mut d2).unwrap();
-        parser.close().unwrap();
+        let (result, mut buf2) = feed(&mut parser, b"2");
+        result.unwrap();
+        parser.close(&mut buf2).unwrap();
     }
     assert_eq!(handler.numbers.len(), 2);
     assert_eq!(handler.numbers[0].as_i32(), Some(1));
@@ -170,9 +196,9 @@ fn interning_table_stays_correct_across_reset() {
         let mut parser = Parser::new(&mut handler);
         parser.disable_all_limits();
         for doc in [&br#"{"widget":1}"#[..], &br#"{"widget":2,"gadget":3}"#[..]] {
-            let mut d = doc;
-            parser.receive(&mut d).unwrap();
-            parser.close().unwrap();
+            let (result, mut buf) = feed(&mut parser, doc);
+            result.unwrap();
+            parser.close(&mut buf).unwrap();
             parser.reset();
         }
     }
@@ -186,10 +212,10 @@ fn duplicate_check_pops_after_nested_object_closes() {
     parser.set_reject_duplicate_keys(true);
     // "a" inside the nested object is not a duplicate of the outer "a",
     // but the second outer "a" after it is.
-    let mut ok = &br#"{"a":{"a":1},"b":2}"#[..];
-    parser.receive(&mut ok).unwrap();
-    parser.close().unwrap();
+    let (result, mut buf) = feed(&mut parser, br#"{"a":{"a":1},"b":2}"#);
+    result.unwrap();
+    parser.close(&mut buf).unwrap();
     parser.reset();
-    let mut dup = &br#"{"a":{"a":1},"a":2}"#[..];
-    assert!(parser.receive(&mut dup).is_err());
+    let (result, _buf) = feed(&mut parser, br#"{"a":{"a":1},"a":2}"#);
+    assert!(result.is_err());
 }

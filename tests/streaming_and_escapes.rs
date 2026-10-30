@@ -1,5 +1,7 @@
 mod common;
 
+use loopbuf::LoopBuf;
+
 use common::{parse_all, parse_chunked, parse_string_value, RecordingHandler};
 use rjsonparser::{ContentHandler, DefaultHandler, ParseResult, Parser};
 
@@ -102,9 +104,10 @@ fn whitespace_opt_in() {
     {
         let mut parser = Parser::new(&mut handler);
         parser.disable_all_limits();
-        let mut data = &b"  1  "[..];
-        parser.receive(&mut data).unwrap();
-        parser.close().unwrap();
+        let mut buf = LoopBuf::with_capacity(5);
+        buf.extend_from_slice(b"  1  ");
+        parser.receive(&mut buf).unwrap();
+        parser.close(&mut buf).unwrap();
     }
     assert!(handler.events.iter().any(|e| e.starts_with("ws:")));
     assert_eq!(handler.numbers[0].as_i32(), Some(1));
@@ -115,9 +118,11 @@ fn default_handler_ok() {
     let mut handler = DefaultHandler;
     let mut parser = Parser::new(&mut handler);
     parser.disable_all_limits();
-    let mut data = &br#"{"x":1}"#[..];
-    parser.receive(&mut data).unwrap();
-    parser.close().unwrap();
+    let json = br#"{"x":1}"#;
+    let mut buf = LoopBuf::with_capacity(json.len());
+    buf.extend_from_slice(json);
+    parser.receive(&mut buf).unwrap();
+    parser.close(&mut buf).unwrap();
 }
 
 struct AbortHandler;
@@ -131,7 +136,8 @@ impl ContentHandler for AbortHandler {
 fn handler_error_propagates() {
     let mut handler = AbortHandler;
     let mut parser = Parser::new(&mut handler);
-    let mut data = &b"{"[..];
-    let err = parser.receive(&mut data).unwrap_err();
+    let mut buf = LoopBuf::with_capacity(1);
+    buf.extend_from_slice(b"{");
+    let err = parser.receive(&mut buf).unwrap_err();
     assert_eq!(err.message(), "abort");
 }
