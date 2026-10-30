@@ -1277,12 +1277,19 @@ fn report_key<H: ContentHandler + ?Sized>(
 }
 
 /// Number of UTF-16 units in `s`: what a locator column counts.
+///
+/// Every character is one unit, or two if it is outside the BMP, and in UTF-8
+/// that is every non-continuation byte, plus one more for each 4-byte lead.
+/// Counting bytes needs no decoding and compiles to a vector loop. Plain ASCII,
+/// the common case, is one unit per byte and is checked a word at a time.
 fn utf16_len(s: &str) -> usize {
     if s.is_ascii() {
-        s.len()
-    } else {
-        s.chars().map(char::len_utf16).sum()
+        return s.len();
     }
+    s.as_bytes()
+        .iter()
+        .map(|&b| usize::from(b & 0xC0 != 0x80) + usize::from(b >= 0xF0))
+        .sum()
 }
 
 /// Index of the first byte in `[from, to)` that ends a run of plain string
@@ -1341,14 +1348,34 @@ fn unhex(b: u8) -> ParseResult<u32> {
     }
 }
 
-/// The escape sequence whose backslash is at `i`. Bytes present are checked
-/// in order, so an invalid escape is reported as soon as it is seen.
-fn parse_escape(input: Input<'_>, i: usize) -> ParseResult<Escape> {
-    let total = input.len();
-    if i + 1 >= total {
+/// Up to 6 bytes starting at `i` (the longest escape), copied out so they can
+/// be examined without a ring-span check per byte, wherever they sit.
+fn peek_escape(input: Input<'_>, i: usize) -> ([u8; 6], usize) {
+    let mut bytes = [0u8; 6];
+    let span = input.span_from(i);
+    if span.len() >= 6 {
+        // the common case: a fixed-size copy, which is one or two loads
+        let head: [u8; 6] = span[..6].try_into().expect("six bytes");
+        return (head, 6);
+    }
+    let mut n = span.len();
+    bytes[..n].copy_from_slice(span);
+    // the rest, if the escape straddles the wrap
+    while n < 6 && i + n < input.len() {
+        bytes[n] = input.get(i + n);
+        n += 1;
+    }
+    (bytes, n)
+}
+
+/// The escape sequence in `bytes`, which starts at its backslash. Bytes
+/// present are checked in order, so an invalid escape is reported as soon as
+/// it is seen.
+fn parse_escape(bytes: &[u8]) -> ParseResult<Escape> {
+    if bytes.len() < 2 {
         return Ok(Escape::NeedMore);
     }
-    let c = input.get(i + 1);
+    let c = bytes[1];
     let simple: u16 = match c {
         b'"' => u16::from(b'"'),
         b'\\' => u16::from(b'\\'),
@@ -1360,12 +1387,11 @@ fn parse_escape(input: Input<'_>, i: usize) -> ParseResult<Escape> {
         b't' => u16::from(b'\t'),
         b'u' => {
             let mut value = 0u32;
-            for k in 0..4 {
-                let at = i + 2 + k;
-                if at >= total {
-                    return Ok(Escape::NeedMore);
+            for k in 2..6 {
+                match bytes.get(k) {
+                    Some(&h) => value = (value << 4) | unhex(h)?,
+                    None => return Ok(Escape::NeedMore),
                 }
-                value = (value << 4) | unhex(input.get(at))?;
             }
             return Ok(Escape::Unit(value as u16, 6));
         }
@@ -1379,35 +1405,38 @@ fn parse_escape(input: Input<'_>, i: usize) -> ParseResult<Escape> {
     Ok(Escape::Unit(simple, 2))
 }
 
-/// Tells whether the bytes at `q` are an escaped low surrogate (`\uDC00` to
-/// `\uDFFF`), following an escaped high surrogate. Returns 1 if so, 0 if not
-/// (the high surrogate is on its own), or -1 if too few bytes are present to
-/// tell.
-fn low_surrogate_escape_follows(input: Input<'_>, q: usize) -> i8 {
-    let available = input.len() - q;
-    if available == 0 {
-        return -1;
-    }
-    if input.get(q) != b'\\' {
-        return 0;
-    }
-    if available < 2 {
-        return -1;
-    }
-    if input.get(q + 1) != b'u' {
-        return 0;
-    }
-    if available < 6 {
-        return -1;
-    }
-    let mut value = 0u32;
-    for i in 2..6 {
-        match unhex(input.get(q + i)) {
-            Ok(d) => value = (value << 4) | d,
-            Err(_) => return 0, // not a valid escape; it is reported when it is reached
+/// What follows an escaped high surrogate.
+enum Follow {
+    /// Too few bytes are present to tell.
+    NeedMore,
+    /// Not an escaped low surrogate: the high surrogate is on its own.
+    Not,
+    /// An escaped low surrogate (`\uDC00` to `\uDFFF`), with its value.
+    Low(u32),
+}
+
+fn low_surrogate_follows(bytes: &[u8]) -> Follow {
+    match bytes {
+        [] => Follow::NeedMore,
+        [first, ..] if *first != b'\\' => Follow::Not,
+        [_] => Follow::NeedMore,
+        [_, second, ..] if *second != b'u' => Follow::Not,
+        _ if bytes.len() < 6 => Follow::NeedMore,
+        _ => {
+            let mut value = 0u32;
+            for &h in &bytes[2..6] {
+                match unhex(h) {
+                    Ok(d) => value = (value << 4) | d,
+                    Err(_) => return Follow::Not, // reported when it is reached
+                }
+            }
+            if (0xDC00..=0xDFFF).contains(&value) {
+                Follow::Low(value)
+            } else {
+                Follow::Not
+            }
         }
     }
-    i8::from((0xDC00..=0xDFFF).contains(&value))
 }
 
 /// The character for the escape at `i` and the source bytes it took, or `None`
@@ -1415,23 +1444,45 @@ fn low_surrogate_escape_follows(input: Input<'_>, q: usize) -> i8 {
 /// together so no content call ends between its halves. A surrogate with no
 /// partner cannot be a Rust `char`, so it becomes U+FFFD.
 fn resolve_escape(input: Input<'_>, i: usize) -> ParseResult<Option<(char, usize)>> {
-    let (unit, n) = match parse_escape(input, i)? {
+    let (bytes, n) = peek_escape(input, i);
+    let (unit, len) = match parse_escape(&bytes[..n])? {
         Escape::NeedMore => return Ok(None),
-        Escape::Unit(unit, n) => (u32::from(unit), n),
+        Escape::Unit(unit, len) => (u32::from(unit), len),
     };
     if (0xD800..=0xDBFF).contains(&unit) {
-        return match low_surrogate_escape_follows(input, i + n) {
-            -1 => Ok(None),
-            1 => match parse_escape(input, i + n)? {
-                Escape::NeedMore => Ok(None),
-                Escape::Unit(low, _) => {
-                    let cp = 0x10000 + ((unit - 0xD800) << 10) + (u32::from(low) - 0xDC00);
-                    Ok(Some((char::from_u32(cp).unwrap_or(char::REPLACEMENT_CHARACTER), n + 6)))
-                }
-            },
-            _ => Ok(Some((char::REPLACEMENT_CHARACTER, n))),
+        let (next, m) = peek_escape(input, i + len);
+        return match low_surrogate_follows(&next[..m]) {
+            Follow::NeedMore => Ok(None),
+            Follow::Not => Ok(Some((char::REPLACEMENT_CHARACTER, len))),
+            Follow::Low(low) => {
+                let cp = 0x10000 + ((unit - 0xD800) << 10) + (low - 0xDC00);
+                Ok(Some((
+                    char::from_u32(cp).unwrap_or(char::REPLACEMENT_CHARACTER),
+                    len + 6,
+                )))
+            }
         };
     }
     // a low surrogate on its own falls out as U+FFFD too
-    Ok(Some((char::from_u32(unit).unwrap_or(char::REPLACEMENT_CHARACTER), n)))
+    Ok(Some((char::from_u32(unit).unwrap_or(char::REPLACEMENT_CHARACTER), len)))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn utf16_len_counts_units_without_decoding() {
+        for s in [
+            "",
+            "plain ascii",
+            "caf\u{e9}",
+            "\u{20ac}\u{4e2d}",
+            "\u{1f600}",
+            "a\u{e9}\u{20ac}\u{1f600}z\u{1f4a9}\u{10ffff}",
+        ] {
+            let expected: usize = s.chars().map(char::len_utf16).sum();
+            assert_eq!(utf16_len(s), expected, "{s:?}");
+        }
+    }
 }
