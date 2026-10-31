@@ -1,6 +1,6 @@
 [package]
 name = "rjsonparser"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2021"
 rust-version = "1.70"
 description = "Push-based JSON parser and writer (jsonparser-style)"
@@ -21,6 +21,6 @@ harness = false
 
 [dependencies]
 # `path` until a loopbuf release includes `Spans`, `window` and `io::{Read, Write}`
-loopbuf = { version = "0.1", path = "../loopbuf" }
+loopbuf = { version = "0.2", path = "../loopbuf" }
 
 [dev-dependencies]
