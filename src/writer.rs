@@ -8,6 +8,13 @@ use loopbuf::LoopBuf;
 use crate::error::{WriteError, WriteResult};
 use crate::number::Number;
 
+/// "00" to "99", for writing two digits per division.
+const PAIRS: &[u8; 200] = b"0001020304050607080910111213141516171819\
+2021222324252627282930313233343536373839\
+4041424344454647484950515253545556575859\
+6061626364656667686970717273747576777879\
+8081828384858687888990919293949596979899";
+
 /// Configuration for JSON output indentation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct IndentConfig {
@@ -358,18 +365,24 @@ impl Writer {
     }
 
     pub fn write_i64(&mut self, buf: &mut LoopBuf, value: i64) -> WriteResult<()> {
-        // digits go into the end of a stack array: no allocation, and none of
-        // the formatting machinery
+        // digits go into the end of a stack array, two at a time: no
+        // allocation, and none of the formatting machinery
         let mut digits = [0u8; 20];
         let mut at = digits.len();
         let mut rest = value.unsigned_abs();
-        loop {
+        while rest >= 100 {
+            let pair = (rest % 100) as usize * 2;
+            rest /= 100;
+            at -= 2;
+            digits[at..at + 2].copy_from_slice(&PAIRS[pair..pair + 2]);
+        }
+        if rest >= 10 {
+            let pair = rest as usize * 2;
+            at -= 2;
+            digits[at..at + 2].copy_from_slice(&PAIRS[pair..pair + 2]);
+        } else {
             at -= 1;
-            digits[at] = b'0' + (rest % 10) as u8;
-            rest /= 10;
-            if rest == 0 {
-                break;
-            }
+            digits[at] = b'0' + rest as u8;
         }
         if value < 0 {
             at -= 1;
