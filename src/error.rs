@@ -26,47 +26,6 @@ impl fmt::Display for ParseError {
 
 impl std::error::Error for ParseError {}
 
-/// Error during JSON writing.
-#[derive(Debug)]
-pub struct WriteError {
-    source: std::io::Error,
-}
-
-impl WriteError {
-    pub fn new(source: std::io::Error) -> Self {
-        Self { source }
-    }
-
-    /// The kind of the underlying I/O error.
-    pub fn kind(&self) -> std::io::ErrorKind {
-        self.source.kind()
-    }
-
-    /// True if the ring had no room for the write right now. Nothing was
-    /// written and the writer's state is unchanged: drain the ring and repeat
-    /// the same call.
-    pub fn is_would_block(&self) -> bool {
-        self.source.kind() == std::io::ErrorKind::WouldBlock
-    }
-}
-
-impl fmt::Display for WriteError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "json write error: {}", self.source)
-    }
-}
-
-impl std::error::Error for WriteError {
-    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        Some(&self.source)
-    }
-}
-
-impl From<std::io::Error> for WriteError {
-    fn from(source: std::io::Error) -> Self {
-        Self::new(source)
-    }
-}
-
 pub type ParseResult<T> = Result<T, ParseError>;
-pub type WriteResult<T> = Result<T, WriteError>;
+
+pub use loopbuf::{WriteError, WriteResult};

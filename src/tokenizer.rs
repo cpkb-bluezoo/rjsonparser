@@ -429,10 +429,9 @@ impl Tokenizer {
     }
 
     fn check_token_limit(&mut self, limits: &ParserLimits) -> ParseResult<()> {
-        let max = limits.max_token_count;
-        if max > 0 {
+        if let Some(max) = limits.max_token_count {
             self.token_count += 1;
-            if self.token_count > max {
+            if self.token_count as u64 > max {
                 return Err(ParseError::new(format!(
                     "Maximum token count exceeded: {max}"
                 )));
@@ -638,11 +637,12 @@ impl Tokenizer {
     }
 
     fn check_depth(&self, limits: &ParserLimits) -> ParseResult<()> {
-        let max_depth = limits.max_nesting_depth;
-        if max_depth > 0 && self.depth_stack.len() >= max_depth as usize {
-            return Err(ParseError::new(format!(
-                "Maximum nesting depth exceeded: {max_depth}"
-            )));
+        if let Some(max_depth) = limits.max_nesting_depth {
+            if self.depth_stack.len() >= max_depth {
+                return Err(ParseError::new(format!(
+                    "Maximum nesting depth exceeded: {max_depth}"
+                )));
+            }
         }
         Ok(())
     }
@@ -775,8 +775,10 @@ impl Tokenizer {
             if run_end > run_start {
                 // Checked before the run is delivered, so a string over the
                 // limit is rejected without its excess ever being reported
-                if limit > 0 && self.string_bytes + (run_end - run_start) as u64 > limit as u64 {
-                    return Err(string_too_long(limit));
+                if let Some(limit) = limit {
+                    if self.string_bytes + (run_end - run_start) as u64 > limit as u64 {
+                        return Err(string_too_long(limit));
+                    }
                 }
                 let (next, units) = self.decode_run(Some(&mut *handler), input, run_start, run_end)?;
                 self.string_bytes += (next - run_start) as u64;
@@ -820,8 +822,10 @@ impl Tokenizer {
             *consumed = run_end + n;
             self.string_bytes += n as u64;
             locator.add_column(n); // raw escape bytes are always ASCII
-            if limit > 0 && self.string_bytes > limit as u64 {
-                return Err(string_too_long(limit));
+            if let Some(limit) = limit {
+                if self.string_bytes > limit as u64 {
+                    return Err(string_too_long(limit));
+                }
             }
         }
     }
@@ -940,10 +944,12 @@ impl Tokenizer {
             // Raw byte count is a conservative (never under-protective) proxy
             // for decoded length, checked mid-scan so a pathologically long
             // key is rejected without waiting for its end
-            if limit > 0 && i - start > limit as usize {
-                return Err(ParseError::new(format!(
-                    "Maximum key length exceeded: {limit}"
-                )));
+            if let Some(limit) = limit {
+                if i - start > limit {
+                    return Err(ParseError::new(format!(
+                        "Maximum key length exceeded: {limit}"
+                    )));
+                }
             }
             let b = input[i];
             if b == b'"' {
@@ -1057,7 +1063,7 @@ impl Tokenizer {
     ) -> ParseResult<bool> {
         let limit = limits.max_number_length;
         let total = input.len();
-        let too_long = |limit: i32| ParseError::new(format!("Maximum number length exceeded: {limit}"));
+        let too_long = |limit: usize| ParseError::new(format!("Maximum number length exceeded: {limit}"));
 
         while *consumed < total {
             let n = &mut self.number;
@@ -1065,8 +1071,10 @@ impl Tokenizer {
                 let taken = n.take_digit_run(input.span_from(*consumed));
                 if taken > 0 {
                     *consumed += taken;
-                    if limit > 0 && n.length > limit as usize {
-                        return Err(too_long(limit));
+                    if let Some(limit) = limit {
+                        if n.length > limit {
+                            return Err(too_long(limit));
+                        }
                     }
                     if *consumed >= total {
                         break;
@@ -1163,8 +1171,10 @@ impl Tokenizer {
             }
             *consumed += 1;
             n.length += 1;
-            if limit > 0 && n.length > limit as usize {
-                return Err(too_long(limit));
+            if let Some(limit) = limit {
+                if n.length > limit {
+                    return Err(too_long(limit));
+                }
             }
         }
         Ok(false)
@@ -1188,7 +1198,7 @@ impl Tokenizer {
     }
 }
 
-fn string_too_long(limit: i32) -> ParseError {
+fn string_too_long(limit: usize) -> ParseError {
     ParseError::new(format!("Maximum string length exceeded: {limit}"))
 }
 

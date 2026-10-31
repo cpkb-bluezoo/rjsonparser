@@ -6,6 +6,7 @@
 
 mod common;
 
+use rjsonparser::ParserLimits;
 use loopbuf::LoopBuf;
 
 use common::RecordingHandler;
@@ -15,7 +16,7 @@ fn parse_with_capacity(json: &[u8], capacity: usize) -> ParseResult<RecordingHan
     let mut handler = RecordingHandler::new();
     {
         let mut parser = Parser::with_buffer_size(&mut handler, capacity);
-        parser.disable_all_limits();
+        parser.set_limits(ParserLimits::unlimited());
         parser.parse(json)?;
     }
     Ok(handler)
@@ -87,7 +88,7 @@ fn many_one_byte_receives_wrap_a_tiny_ring_many_times() {
     let whole_events = {
         let mut reference_handler = RecordingHandler::new();
         let mut parser = Parser::new(&mut reference_handler);
-        parser.disable_all_limits();
+        parser.set_limits(ParserLimits::unlimited());
         let mut buf = LoopBuf::with_capacity(json.len());
         buf.extend_from_slice(json);
         parser.receive(&mut buf).unwrap();
@@ -97,7 +98,7 @@ fn many_one_byte_receives_wrap_a_tiny_ring_many_times() {
 
     let mut handler = RecordingHandler::new();
     let mut parser = Parser::new(&mut handler);
-    parser.disable_all_limits();
+    parser.set_limits(ParserLimits::unlimited());
     let mut buf = LoopBuf::with_capacity(4);
     for &byte in json.iter() {
         // The caller is responsible for making room before writing more --
@@ -146,7 +147,7 @@ fn tokens_straddling_the_wrap_parse_identically_at_every_capacity() {
             let mut handler = RecordingHandler::new();
             {
                 let mut parser = Parser::with_buffer_size(&mut handler, capacity);
-                parser.disable_all_limits();
+                parser.set_limits(ParserLimits::unlimited());
                 parser
                     .parse(Dribble { data: json.as_bytes(), step: start_step })
                     .unwrap_or_else(|e| panic!("capacity {capacity} step {start_step}: {e}"));

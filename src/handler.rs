@@ -23,7 +23,7 @@ use crate::number::Number;
 ///
 /// - A key is read whole from the caller's ring and decoded into the
 ///   parser's character buffer, so it must fit both (see
-///   [`crate::Parser::set_max_name_length`] and
+///   [`crate::ParserLimits::max_name_length`] and
 ///   [`crate::Parser::set_string_chunk_size`]); a ring too small for it is
 ///   an error, not something this API streams around. [`Self::key`] always
 ///   reports a key in one call.

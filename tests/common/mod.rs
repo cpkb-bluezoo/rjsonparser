@@ -1,6 +1,7 @@
 //! Common test helpers.
 #![allow(dead_code)]
 
+use rjsonparser::ParserLimits;
 use loopbuf::LoopBuf;
 use rjsonparser::{ContentHandler, Number, ParseResult, Parser};
 
@@ -93,7 +94,7 @@ pub fn parse_all(input: &[u8]) -> ParseResult<RecordingHandler> {
     let mut handler = RecordingHandler::new();
     {
         let mut parser = Parser::new(&mut handler);
-        parser.disable_all_limits();
+        parser.set_limits(ParserLimits::unlimited());
         let mut buf = LoopBuf::with_capacity(input.len().max(1));
         buf.extend_from_slice(input);
         parser.receive(&mut buf)?;
@@ -121,7 +122,7 @@ pub fn parse_chunked(input: &[u8], chunk_size: usize) -> ParseResult<RecordingHa
     let mut handler = RecordingHandler::new();
     {
         let mut parser = Parser::new(&mut handler);
-        parser.disable_all_limits();
+        parser.set_limits(ParserLimits::unlimited());
         let mut buf = LoopBuf::with_capacity(input.len().max(1));
         let mut offset = 0;
         while offset < input.len() {

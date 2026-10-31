@@ -1,5 +1,6 @@
 mod common;
 
+use rjsonparser::ParserLimits;
 use loopbuf::LoopBuf;
 
 use common::{parse_all, parse_number_value};
@@ -88,7 +89,7 @@ fn bom_utf8_split() {
     let mut handler = common::RecordingHandler::new();
     {
         let mut parser = Parser::new(&mut handler);
-        parser.disable_all_limits();
+        parser.set_limits(ParserLimits::unlimited());
         let mut buf = LoopBuf::with_capacity(7);
         buf.extend_from_slice(&[0xEFu8, 0xBB]);
         parser.receive(&mut buf).unwrap();

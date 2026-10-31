@@ -43,7 +43,7 @@ enum Bom {
 /// whatever the caller reads in next, to be presented again. After `receive`
 /// returns, the ring's length is exactly how much was left.
 ///
-/// The ring must be larger than the longest key (see [`Self::set_max_name_length`])
+/// The ring must be larger than the longest key (see [`ParserLimits::max_name_length`])
 /// plus its two quotes. If it is full of one unfinished token, `receive`
 /// returns an error rather than waiting for data that cannot fit.
 ///
@@ -63,7 +63,7 @@ pub struct Parser<H: ContentHandler> {
     reject_duplicate_keys: bool,
     checked_bom: bool,
     closed: bool,
-    document_length: i64,
+    document_length: u64,
     /// How many bytes the last `receive` left in the ring. They are presented
     /// again, so they were already counted towards `document_length`.
     unconsumed: usize,
@@ -124,46 +124,20 @@ impl<H: ContentHandler> Parser<H> {
         self.reject_duplicate_keys = reject_duplicate_keys;
     }
 
-    /// Sets the maximum object/array nesting depth.
-    pub fn set_max_nesting_depth(&mut self, max_nesting_depth: i32) {
-        self.limits.max_nesting_depth = max_nesting_depth;
+    /// The limits in force.
+    pub fn limits(&self) -> &ParserLimits {
+        &self.limits
     }
 
-    /// Sets the maximum number of characters in a single number token.
-    pub fn set_max_number_length(&mut self, max_number_length: i32) {
-        self.limits.max_number_length = max_number_length;
+    /// Mutable access to the limits, to change one without restating the rest.
+    pub fn limits_mut(&mut self) -> &mut ParserLimits {
+        &mut self.limits
     }
 
-    /// Sets the maximum size in raw bytes (before unescaping, excluding the
-    /// quotes) of a single string value; `<= 0` means no limit, the default.
-    ///
-    /// The parser does not need this: a string is delivered to the handler a
-    /// piece at a time through a fixed-size buffer, so a string of any length
-    /// costs it the same. It is for a handler that accumulates strings, or a
-    /// service that wants to reject oversize fields early.
-    pub fn set_max_string_length(&mut self, max_string_length: i32) {
-        self.limits.max_string_length = max_string_length;
-    }
-
-    /// Sets the maximum size in raw bytes (before unescaping, excluding the
-    /// quotes) of a single object key. Default 4096.
-    pub fn set_max_name_length(&mut self, max_name_length: i32) {
-        self.limits.max_name_length = max_name_length;
-    }
-
-    /// Sets the maximum total number of bytes in one document.
-    pub fn set_max_document_length(&mut self, max_document_length: i64) {
-        self.limits.max_document_length = max_document_length;
-    }
-
-    /// Sets the maximum total number of tokens in one document.
-    pub fn set_max_token_count(&mut self, max_token_count: i64) {
-        self.limits.max_token_count = max_token_count;
-    }
-
-    /// Disables every configurable limit in one call.
-    pub fn disable_all_limits(&mut self) {
-        self.limits.disable_all();
+    /// Replaces the limits. See [`ParserLimits`] for what each one guards and
+    /// its default.
+    pub fn set_limits(&mut self, limits: ParserLimits) {
+        self.limits = limits;
     }
 
     /// Sets the size in bytes of the buffer that string content is decoded
@@ -226,13 +200,12 @@ impl<H: ContentHandler> Parser<H> {
             return Ok(());
         }
 
-        if self.limits.max_document_length > 0 {
+        if let Some(max) = self.limits.max_document_length {
             // The unconsumed bytes presented again were counted when they first arrived
-            self.document_length += available.saturating_sub(self.unconsumed) as i64;
-            if self.document_length > self.limits.max_document_length {
+            self.document_length += available.saturating_sub(self.unconsumed) as u64;
+            if self.document_length > max {
                 return Err(ParseError::new(format!(
-                    "Maximum document length exceeded: {}",
-                    self.limits.max_document_length
+                    "Maximum document length exceeded: {max}"
                 )));
             }
         }
@@ -249,7 +222,7 @@ impl<H: ContentHandler> Parser<H> {
         if check_room && consumed == 0 && buf.is_full() {
             return Err(ParseError::new(format!(
                 "Receive buffer too small: the next token needs more than the {} bytes it holds. \
-                 A key must fit the buffer (see set_max_name_length).",
+                 A key must fit the buffer (see ParserLimits::max_name_length).",
                 buf.len()
             )));
         }

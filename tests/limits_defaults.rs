@@ -1,5 +1,6 @@
 //! Resource-limit tests ported from the Java LimitsTest.
 
+use rjsonparser::ParserLimits;
 use loopbuf::LoopBuf;
 
 use rjsonparser::{ContentHandler, DefaultHandler, Parser};
@@ -36,40 +37,40 @@ fn ok(configure: impl FnOnce(&mut Parser<DefaultHandler>), json: &str) -> bool {
 
 #[test]
 fn nesting_depth_custom_and_default() {
-    assert!(ok(|p| p.set_max_nesting_depth(3), &nested_array(3)));
-    assert!(!ok(|p| p.set_max_nesting_depth(3), &nested_array(4)));
+    assert!(ok(|p| p.limits_mut().max_nesting_depth = Some(3), &nested_array(3)));
+    assert!(!ok(|p| p.limits_mut().max_nesting_depth = Some(3), &nested_array(4)));
     assert!(ok(|_| {}, &nested_array(1000)));
     assert!(!ok(|_| {}, &nested_array(1001)));
-    assert!(ok(|p| p.set_max_nesting_depth(0), &nested_array(5000)));
+    assert!(ok(|p| p.limits_mut().max_nesting_depth = None, &nested_array(5000)));
 }
 
 #[test]
 fn number_length_custom_default_disabled() {
-    assert!(ok(|p| p.set_max_number_length(5), &digits(5)));
-    assert!(!ok(|p| p.set_max_number_length(5), &digits(6)));
+    assert!(ok(|p| p.limits_mut().max_number_length = Some(5), &digits(5)));
+    assert!(!ok(|p| p.limits_mut().max_number_length = Some(5), &digits(6)));
     assert!(ok(|_| {}, &digits(1000)));
     assert!(!ok(|_| {}, &digits(1001)));
-    assert!(ok(|p| p.disable_all_limits(), &digits(2000)));
+    assert!(ok(|p| p.set_limits(ParserLimits::unlimited()), &digits(2000)));
 }
 
 #[test]
 fn string_length_custom_default_disabled() {
-    assert!(ok(|p| p.set_max_string_length(5), &quoted(5, 'a')));
-    assert!(!ok(|p| p.set_max_string_length(5), &quoted(6, 'a')));
-    assert!(ok(|p| p.disable_all_limits(), &quoted(100_000, 'a')));
+    assert!(ok(|p| p.limits_mut().max_string_length = Some(5), &quoted(5, 'a')));
+    assert!(!ok(|p| p.limits_mut().max_string_length = Some(5), &quoted(6, 'a')));
+    assert!(ok(|p| p.set_limits(ParserLimits::unlimited()), &quoted(100_000, 'a')));
     assert!(ok(|_| {}, &quoted(100_000, 'a')));
 }
 
 #[test]
 fn name_length_applies_to_keys_only() {
     let key = |n| format!("{{{}:1}}", quoted(n, 'k'));
-    assert!(ok(|p| p.set_max_name_length(5), &key(5)));
-    assert!(!ok(|p| p.set_max_name_length(5), &key(6)));
+    assert!(ok(|p| p.limits_mut().max_name_length = Some(5), &key(5)));
+    assert!(!ok(|p| p.limits_mut().max_name_length = Some(5), &key(6)));
     let value = format!("{{{}:{}}}", quoted(5, 'k'), quoted(50, 'v'));
     assert!(ok(
         |p| {
-            p.set_max_name_length(5);
-            p.set_max_string_length(0);
+            p.limits_mut().max_name_length = Some(5);
+            p.limits_mut().max_string_length = None;
         },
         &value
     ));
@@ -77,15 +78,15 @@ fn name_length_applies_to_keys_only() {
 
 #[test]
 fn document_length_custom_and_default() {
-    assert!(ok(|p| p.set_max_document_length(7), "[1,2,3]"));
-    assert!(!ok(|p| p.set_max_document_length(6), "[1,2,3]"));
+    assert!(ok(|p| p.limits_mut().max_document_length = Some(7), "[1,2,3]"));
+    assert!(!ok(|p| p.limits_mut().max_document_length = Some(6), "[1,2,3]"));
     assert!(ok(|_| {}, &quoted(100_000, 'a')));
 }
 
 #[test]
 fn document_length_counts_across_chunks() {
     let mut p = Parser::new(DefaultHandler);
-    p.set_max_document_length(6);
+    p.limits_mut().max_document_length = Some(6);
     let mut buf = LoopBuf::with_capacity(7);
     buf.extend_from_slice(b"[1,2");
     p.receive(&mut buf).unwrap();
@@ -95,25 +96,25 @@ fn document_length_counts_across_chunks() {
 
 #[test]
 fn token_count_custom_and_default() {
-    assert!(!ok(|p| p.set_max_token_count(100), &big_array(1000)));
-    assert!(ok(|p| p.set_max_token_count(10_000), &big_array(1000)));
+    assert!(!ok(|p| p.limits_mut().max_token_count = Some(100), &big_array(1000)));
+    assert!(ok(|p| p.limits_mut().max_token_count = Some(10_000), &big_array(1000)));
     assert!(ok(|_| {}, &big_array(10_000)));
 }
 
 #[test]
 fn disable_all_limits_overrides_custom() {
     let tight = |p: &mut Parser<DefaultHandler>| {
-        p.set_max_nesting_depth(2);
-        p.set_max_string_length(2);
-        p.set_max_number_length(2);
-        p.set_max_name_length(2);
+        p.limits_mut().max_nesting_depth = Some(2);
+        p.limits_mut().max_string_length = Some(2);
+        p.limits_mut().max_number_length = Some(2);
+        p.limits_mut().max_name_length = Some(2);
     };
     assert!(!ok(tight, &nested_array(5)));
     for json in [nested_array(5), quoted(50, 'a'), digits(50)] {
         assert!(ok(
             |p| {
                 tight(p);
-                p.disable_all_limits();
+                p.set_limits(ParserLimits::unlimited());
             },
             &json
         ));
@@ -123,7 +124,7 @@ fn disable_all_limits_overrides_custom() {
 #[test]
 fn limits_survive_reset() {
     let mut p = Parser::new(DefaultHandler);
-    p.set_max_string_length(5);
+    p.limits_mut().max_string_length = Some(5);
     assert!(run(&mut p, &quoted(5, 'a')));
     p.reset();
     assert!(!run(&mut p, &quoted(6, 'a')));

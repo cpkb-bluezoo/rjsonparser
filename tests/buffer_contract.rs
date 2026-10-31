@@ -7,6 +7,7 @@
 
 mod common;
 
+use rjsonparser::ParserLimits;
 use loopbuf::LoopBuf;
 use rjsonparser::{ContentHandler, DefaultHandler, ParseResult, Parser};
 
@@ -122,7 +123,7 @@ fn a_parser_can_be_reused_after_a_document_that_ended_mid_token() {
 fn a_ring_too_small_for_the_next_token_is_reported() {
     let doc = b"{\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\":1}";
     let mut parser = Parser::new(DefaultHandler);
-    parser.disable_all_limits();
+    parser.set_limits(ParserLimits::unlimited());
     let mut buf = LoopBuf::with_capacity(16);
     let mut offset = 0;
     let err = loop {
@@ -170,7 +171,7 @@ fn parse_from_a_reader_uses_one_fixed_buffer() {
 fn parse_from_a_reader_reports_a_key_too_big_for_the_buffer() {
     let doc = format!("{{\"{}\":1}}", "k".repeat(100));
     let mut parser = Parser::with_buffer_size(DefaultHandler, 32);
-    parser.disable_all_limits();
+    parser.set_limits(ParserLimits::unlimited());
     let err = parser.parse(doc.as_bytes()).unwrap_err();
     assert!(err.message().to_lowercase().contains("buffer"), "{err}");
 }
@@ -182,9 +183,9 @@ fn max_document_length_counts_each_byte_once() {
     for doc in ["{\"abcdef\":123456}", "\u{feff}{\"abcdef\":123456}"] {
         let bytes = doc.as_bytes();
         for chunk in [1usize, 2, 3, 5, 100] {
-            let feed = |limit: i64| -> ParseResult<()> {
+            let feed = |limit: u64| -> ParseResult<()> {
                 let mut parser = Parser::new(DefaultHandler);
-                parser.set_max_document_length(limit);
+                parser.limits_mut().max_document_length = Some(limit);
                 let mut buf = LoopBuf::with_capacity(chunk + 64);
                 for piece in bytes.chunks(chunk) {
                     buf.extend_from_slice(piece);
@@ -192,9 +193,9 @@ fn max_document_length_counts_each_byte_once() {
                 }
                 parser.close(&mut buf)
             };
-            feed(bytes.len() as i64).unwrap_or_else(|e| panic!("chunk={chunk}: {e}"));
+            feed(bytes.len() as u64).unwrap_or_else(|e| panic!("chunk={chunk}: {e}"));
             assert!(
-                feed(bytes.len() as i64 - 1).is_err(),
+                feed(bytes.len() as u64 - 1).is_err(),
                 "chunk={chunk}: the document is one byte over the limit"
             );
         }

@@ -1,5 +1,6 @@
 mod common;
 
+use rjsonparser::ParserLimits;
 use loopbuf::LoopBuf;
 
 use common::{parse_all, RecordingHandler};
@@ -26,7 +27,7 @@ fn duplicate_keys_allowed_by_default() {
 fn duplicate_keys_rejected_when_enabled() {
     let mut handler = RecordingHandler::new();
     let mut parser = Parser::new(&mut handler);
-    parser.disable_all_limits();
+    parser.set_limits(ParserLimits::unlimited());
     parser.set_reject_duplicate_keys(true);
     let (result, _buf) = feed(&mut parser, br#"{"a":1,"a":2}"#);
     let err = result.unwrap_err();
@@ -40,7 +41,7 @@ fn duplicate_keys_rejected_when_one_key_uses_an_escape() {
     // the plain/interning fast path.
     let mut handler = RecordingHandler::new();
     let mut parser = Parser::new(&mut handler);
-    parser.disable_all_limits();
+    parser.set_limits(ParserLimits::unlimited());
     parser.set_reject_duplicate_keys(true);
     let (result, _buf) = feed(&mut parser, br#"{"a":1,"\u0061":2}"#);
     let err = result.unwrap_err();
@@ -52,7 +53,7 @@ fn duplicate_keys_scoped_per_object() {
     let mut handler = RecordingHandler::new();
     {
         let mut parser = Parser::new(&mut handler);
-        parser.disable_all_limits();
+        parser.set_limits(ParserLimits::unlimited());
         parser.set_reject_duplicate_keys(true);
         let (result, mut buf) = feed(&mut parser, br#"{"a":{"a":1},"b":2}"#);
         result.unwrap();
@@ -81,7 +82,7 @@ fn key_interning_repeated_keys() {
 fn limits_nesting_depth() {
     let mut handler = RecordingHandler::new();
     let mut parser = Parser::new(&mut handler);
-    parser.set_max_nesting_depth(2);
+    parser.limits_mut().max_nesting_depth = Some(2);
     let (result, _buf) = feed(&mut parser, b"[[[1]]]");
     assert!(result.is_err());
 }
@@ -90,7 +91,7 @@ fn limits_nesting_depth() {
 fn limits_string_length() {
     let mut handler = RecordingHandler::new();
     let mut parser = Parser::new(&mut handler);
-    parser.set_max_string_length(5);
+    parser.limits_mut().max_string_length = Some(5);
     let (result, _buf) = feed(&mut parser, br#""abcdef""#);
     assert!(result.is_err());
 }
@@ -99,7 +100,7 @@ fn limits_string_length() {
 fn limits_number_length() {
     let mut handler = RecordingHandler::new();
     let mut parser = Parser::new(&mut handler);
-    parser.set_max_number_length(3);
+    parser.limits_mut().max_number_length = Some(3);
     // a number is read a byte at a time, so it is rejected as soon as it is too long
     let (result, _buf) = feed(&mut parser, b"1234");
     assert!(result.is_err());
@@ -109,7 +110,7 @@ fn limits_number_length() {
 fn limits_document_length() {
     let mut handler = RecordingHandler::new();
     let mut parser = Parser::new(&mut handler);
-    parser.set_max_document_length(3);
+    parser.limits_mut().max_document_length = Some(3);
     let (result, _buf) = feed(&mut parser, b"1234");
     assert!(result.is_err());
 }
@@ -118,7 +119,7 @@ fn limits_document_length() {
 fn limits_token_count() {
     let mut handler = RecordingHandler::new();
     let mut parser = Parser::new(&mut handler);
-    parser.set_max_token_count(2);
+    parser.limits_mut().max_token_count = Some(2);
     let (result, _buf) = feed(&mut parser, b"[1,2,3]");
     assert!(result.is_err());
 }
@@ -135,7 +136,7 @@ fn reset_reuses_parser() {
     let mut handler = RecordingHandler::new();
     {
         let mut parser = Parser::new(&mut handler);
-        parser.disable_all_limits();
+        parser.set_limits(ParserLimits::unlimited());
         let (result, mut buf1) = feed(&mut parser, b"1");
         result.unwrap();
         parser.close(&mut buf1).unwrap();
@@ -164,7 +165,7 @@ fn parse_from_read() {
     let mut handler = CountingHandler { keys: Vec::new() };
     {
         let mut parser = Parser::new(&mut handler);
-        parser.disable_all_limits();
+        parser.set_limits(ParserLimits::unlimited());
         parser.parse(&br#"{"hello":"world"}"#[..]).unwrap();
     }
     assert_eq!(handler.keys, vec!["hello"]);
@@ -194,7 +195,7 @@ fn interning_table_stays_correct_across_reset() {
     let mut handler = RecordingHandler::new();
     {
         let mut parser = Parser::new(&mut handler);
-        parser.disable_all_limits();
+        parser.set_limits(ParserLimits::unlimited());
         for doc in [&br#"{"widget":1}"#[..], &br#"{"widget":2,"gadget":3}"#[..]] {
             let (result, mut buf) = feed(&mut parser, doc);
             result.unwrap();

@@ -1,5 +1,6 @@
 mod common;
 
+use rjsonparser::ParserLimits;
 use loopbuf::LoopBuf;
 
 use common::{parse_all, parse_chunked, parse_string_value, RecordingHandler};
@@ -103,7 +104,7 @@ fn whitespace_opt_in() {
     let mut handler = RecordingHandler::with_whitespace();
     {
         let mut parser = Parser::new(&mut handler);
-        parser.disable_all_limits();
+        parser.set_limits(ParserLimits::unlimited());
         let mut buf = LoopBuf::with_capacity(5);
         buf.extend_from_slice(b"  1  ");
         parser.receive(&mut buf).unwrap();
@@ -117,7 +118,7 @@ fn whitespace_opt_in() {
 fn default_handler_ok() {
     let mut handler = DefaultHandler;
     let mut parser = Parser::new(&mut handler);
-    parser.disable_all_limits();
+    parser.set_limits(ParserLimits::unlimited());
     let json = br#"{"x":1}"#;
     let mut buf = LoopBuf::with_capacity(json.len());
     buf.extend_from_slice(json);

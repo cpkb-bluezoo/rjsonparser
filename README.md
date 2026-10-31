@@ -69,11 +69,18 @@ into it and handed to the handler as a `&str` as it arrives
 of any length costs the same.
 
 Keys are delivered whole, so a key must fit both the ring and that buffer.
-The ring must be larger than the longest key (`set_max_name_length`, 4096 raw
-bytes by default) plus its quotes. If it is full of one unfinished token,
-`receive` returns a "receive buffer too small" error instead of buffering for
-itself. Strings are unlimited by default (`set_max_string_length` is an
-opt-in cap for handlers that accumulate them).
+The ring must be larger than the longest key (`ParserLimits::max_name_length`,
+4096 raw bytes by default) plus its quotes. If it is full of one unfinished
+token, `receive` returns a "receive buffer too small" error instead of
+buffering for itself. Strings are unlimited by default
+(`ParserLimits::max_string_length` is an opt-in cap for handlers that
+accumulate them).
+
+Limits are a `ParserLimits` struct, each field `None` for no limit
+(`max_nesting_depth`, `max_number_length`, `max_string_length`,
+`max_name_length`, `max_document_length`, `max_token_count`): pass it to
+`set_limits`, change one with `limits_mut()`, or start from
+`ParserLimits::unlimited()`.
 
 An escaped surrogate pair is delivered as one character. A surrogate with no
 partner cannot be represented in a Rust `&str`, so it is reported as U+FFFD.
