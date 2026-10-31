@@ -2,8 +2,8 @@
 //!
 //! No `build.rs` — suite loading only happens when this integration test binary runs.
 
-use rjsonparser::ParserLimits;
 use loopbuf::LoopBuf;
+use rjsonparser::ParserLimits;
 use rjsonparser::{DefaultHandler, Parser};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -39,10 +39,7 @@ fn try_parse(bytes: &[u8]) -> Result<(), String> {
 fn run_case(path: &Path, expect: Expect) -> Result<(), String> {
     let bytes = fs::read(path).map_err(|e| format!("read {}: {e}", path.display()))?;
     let result = try_parse(&bytes);
-    let name = path
-        .file_name()
-        .and_then(|n| n.to_str())
-        .unwrap_or("?");
+    let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("?");
 
     match expect {
         Expect::Pass => result.map_err(|e| format!("{name}: expected pass, got error: {e}")),
@@ -85,10 +82,7 @@ fn collect_cases(dir: &Path) -> Vec<(String, PathBuf, Expect)> {
             .and_then(|n| n.to_str())
             .unwrap_or("case")
             .to_owned();
-        let file_name = path
-            .file_name()
-            .and_then(|n| n.to_str())
-            .unwrap_or("");
+        let file_name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
         let Some(expect) = expect_for(file_name) else {
             continue;
         };
@@ -140,7 +134,13 @@ fn main() -> ExitCode {
     let mut failed = 0usize;
     let mut filtered = 0usize;
 
-    println!("\nrunning {} tests", cases.iter().filter(|(n, _, _)| filter_matches(&filter, n)).count());
+    println!(
+        "\nrunning {} tests",
+        cases
+            .iter()
+            .filter(|(n, _, _)| filter_matches(&filter, n))
+            .count()
+    );
 
     for (name, path, expect) in &cases {
         if !filter_matches(&filter, name) {

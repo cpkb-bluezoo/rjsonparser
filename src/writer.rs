@@ -469,9 +469,15 @@ impl Writer {
             newline_depth: None,
         };
         match (self.indent, self.state) {
-            (None, State::AfterValue) => Prefix { comma: true, ..none },
+            (None, State::AfterValue) => Prefix {
+                comma: true,
+                ..none
+            },
             (None, _) => none,
-            (Some(_), State::AfterKey) => Prefix { space: true, ..none },
+            (Some(_), State::AfterKey) => Prefix {
+                space: true,
+                ..none
+            },
             (Some(_), State::AfterValue) => Prefix {
                 comma: true,
                 newline_depth: Some(self.depth),
@@ -601,14 +607,7 @@ fn put_escaped<O: Out>(out: &mut O, s: &str) {
             b'\n' => out.put(b"\\n"),
             b'\r' => out.put(b"\\r"),
             b'\t' => out.put(b"\\t"),
-            c => out.put(&[
-                b'\\',
-                b'u',
-                b'0',
-                b'0',
-                hex_char(c >> 4),
-                hex_char(c & 0xF),
-            ]),
+            c => out.put(&[b'\\', b'u', b'0', b'0', hex_char(c >> 4), hex_char(c & 0xF)]),
         };
     }
     if start < bytes.len() {

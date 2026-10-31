@@ -1,8 +1,8 @@
 //! Common test helpers.
 #![allow(dead_code)]
 
-use rjsonparser::ParserLimits;
 use loopbuf::LoopBuf;
+use rjsonparser::ParserLimits;
 use rjsonparser::{ContentHandler, Number, ParseResult, Parser};
 
 #[derive(Debug, Default)]

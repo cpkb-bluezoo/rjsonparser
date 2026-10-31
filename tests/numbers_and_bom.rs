@@ -1,7 +1,7 @@
 mod common;
 
-use rjsonparser::ParserLimits;
 use loopbuf::LoopBuf;
+use rjsonparser::ParserLimits;
 
 use common::{parse_all, parse_number_value};
 use rjsonparser::{Number, Parser};
@@ -170,7 +170,11 @@ fn no_bom_and_no_bom_after_reset() {
     let mut handler = common::RecordingHandler::new();
     {
         let mut parser = Parser::new(&mut handler);
-        for doc in [&b"[1]"[..], &[0xEF, 0xBB, 0xBF, b'[', b'2', b']'][..], &b"[3]"[..]] {
+        for doc in [
+            &b"[1]"[..],
+            &[0xEF, 0xBB, 0xBF, b'[', b'2', b']'][..],
+            &b"[3]"[..],
+        ] {
             let mut buf = LoopBuf::with_capacity(doc.len());
             buf.extend_from_slice(doc);
             parser.receive(&mut buf).unwrap();
@@ -178,6 +182,10 @@ fn no_bom_and_no_bom_after_reset() {
             parser.reset();
         }
     }
-    let got: Vec<_> = handler.numbers.iter().map(|n| n.as_i32().unwrap()).collect();
+    let got: Vec<_> = handler
+        .numbers
+        .iter()
+        .map(|n| n.as_i32().unwrap())
+        .collect();
     assert_eq!(got, [1, 2, 3]);
 }

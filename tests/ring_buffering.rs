@@ -6,8 +6,8 @@
 
 mod common;
 
-use rjsonparser::ParserLimits;
 use loopbuf::LoopBuf;
+use rjsonparser::ParserLimits;
 
 use common::RecordingHandler;
 use rjsonparser::{ParseResult, Parser};
@@ -139,7 +139,9 @@ fn tokens_straddling_the_wrap_parse_identically_at_every_capacity() {
         r#"{"key":"plain","é€":"café 😀 😀 end","n":[-12.5e3,0,123456789012,true,false,null],"#,
         r#""esc\n\t\"q\"":"a\\b\/c","deep":{"x":[{"y":"zé"},[],{}]},"last":"€€€€€€€€"}"#
     );
-    let whole = parse_with_capacity(json.as_bytes(), json.len() + 64).unwrap().events;
+    let whole = parse_with_capacity(json.as_bytes(), json.len() + 64)
+        .unwrap()
+        .events;
     // the longest token that must be present whole is the 12 byte surrogate
     // pair escape; a ring of at least 16 always has room for it
     for capacity in 16..=json.len() {
@@ -149,10 +151,16 @@ fn tokens_straddling_the_wrap_parse_identically_at_every_capacity() {
                 let mut parser = Parser::with_buffer_size(&mut handler, capacity);
                 parser.set_limits(ParserLimits::unlimited());
                 parser
-                    .parse(Dribble { data: json.as_bytes(), step: start_step })
+                    .parse(Dribble {
+                        data: json.as_bytes(),
+                        step: start_step,
+                    })
                     .unwrap_or_else(|e| panic!("capacity {capacity} step {start_step}: {e}"));
             }
-            assert_eq!(handler.events, whole, "capacity {capacity} step {start_step}");
+            assert_eq!(
+                handler.events, whole,
+                "capacity {capacity} step {start_step}"
+            );
         }
     }
 }

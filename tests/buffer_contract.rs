@@ -7,8 +7,8 @@
 
 mod common;
 
-use rjsonparser::ParserLimits;
 use loopbuf::LoopBuf;
+use rjsonparser::ParserLimits;
 use rjsonparser::{ContentHandler, DefaultHandler, ParseResult, Parser};
 
 fn ring_with(bytes: &[u8]) -> LoopBuf {
@@ -51,7 +51,10 @@ fn incomplete_escape_stays_in_the_ring_from_its_backslash() {
 
 #[test]
 fn incomplete_utf8_sequence_stays_in_the_ring() {
-    assert_eq!(receive_leaves(&[b'[', b'"', b'a', 0xE2, 0x82]), &[0xE2, 0x82]);
+    assert_eq!(
+        receive_leaves(&[b'[', b'"', b'a', 0xE2, 0x82]),
+        &[0xE2, 0x82]
+    );
 }
 
 #[test]
@@ -129,11 +132,17 @@ fn a_ring_too_small_for_the_next_token_is_reported() {
     let err = loop {
         let n = buf.extend_from_slice(&doc[offset..]);
         offset += n;
-        assert!(n > 0, "the ring is full of an unfinished token and the parser did not say so");
+        assert!(
+            n > 0,
+            "the ring is full of an unfinished token and the parser did not say so"
+        );
         if let Err(e) = parser.receive(&mut buf) {
             break e;
         }
-        assert!(offset < doc.len(), "a 44 byte key cannot fit a 16 byte ring");
+        assert!(
+            offset < doc.len(),
+            "a 44 byte key cannot fit a 16 byte ring"
+        );
     };
     assert!(err.message().to_lowercase().contains("buffer"), "{err}");
 }
@@ -223,6 +232,10 @@ fn a_bad_literal_is_rejected_without_waiting_for_the_rest_of_it() {
     for bad in [&b"[tx"[..], b"[fa!", b"[nulx"] {
         let mut parser = Parser::new(DefaultHandler);
         let mut buf = ring_with(bad);
-        assert!(parser.receive(&mut buf).is_err(), "{:?}", String::from_utf8_lossy(bad));
+        assert!(
+            parser.receive(&mut buf).is_err(),
+            "{:?}",
+            String::from_utf8_lossy(bad)
+        );
     }
 }

@@ -165,7 +165,19 @@ fn numbers_of_every_kind() {
 fn integers_at_their_edges() {
     let json = render(|w, b| {
         w.write_start_array(b)?;
-        for v in [0, -1, 1, 9, 10, -10, 99, 100, i64::MIN, i64::MAX, i64::from(i32::MIN)] {
+        for v in [
+            0,
+            -1,
+            1,
+            9,
+            10,
+            -10,
+            99,
+            100,
+            i64::MIN,
+            i64::MAX,
+            i64::from(i32::MIN),
+        ] {
             w.write_i64(b, v)?;
         }
         w.write_end_array(b)
@@ -179,8 +191,17 @@ fn integers_at_their_edges() {
 #[test]
 fn doubles_round_trip_including_ones_too_long_for_the_stack_buffer() {
     let values = [
-        0.0, -0.0, 1.5, -1.5e-10, 123456789.12345679, 1e21, 1e300, -1e300, f64::MAX,
-        f64::MIN_POSITIVE, 5e-324,
+        0.0,
+        -0.0,
+        1.5,
+        -1.5e-10,
+        123456789.12345679,
+        1e21,
+        1e300,
+        -1e300,
+        f64::MAX,
+        f64::MIN_POSITIVE,
+        5e-324,
     ];
     let json = render(|w, b| {
         w.write_start_array(b)?;
@@ -267,7 +288,11 @@ fn a_ring_with_no_room_is_would_block_and_nothing_is_written() {
 
     let err = w.write_string(&mut ring, "more").unwrap_err();
     assert!(err.is_would_block(), "{err}");
-    assert_eq!(ring.spans().to_vec(), before, "not a byte of it was written");
+    assert_eq!(
+        ring.spans().to_vec(),
+        before,
+        "not a byte of it was written"
+    );
 
     // the writer is exactly where it was: drain, repeat the same call
     ring.advance(ring.len());
@@ -313,17 +338,27 @@ fn a_document_far_bigger_than_the_ring_streams_through_it() {
             retry(ring, out, |r| w.write_key(r, "id"));
             retry(ring, out, |r| w.write_i32(r, i));
             retry(ring, out, |r| w.write_key(r, "name"));
-            retry(ring, out, |r| w.write_string(r, &format!("caf\u{e9} \"{i}\"\n")));
+            retry(ring, out, |r| {
+                w.write_string(r, &format!("caf\u{e9} \"{i}\"\n"))
+            });
             retry(ring, out, |r| w.write_end_object(r));
         }
         retry(ring, out, |r| w.write_end_array(r));
         ring.read_to_end(out).unwrap();
     }
 
-    for indent in [None, Some(IndentConfig::spaces2()), Some(IndentConfig::tabs())] {
+    for indent in [
+        None,
+        Some(IndentConfig::spaces2()),
+        Some(IndentConfig::tabs()),
+    ] {
         let new = || indent.map_or_else(Writer::new, Writer::with_indent);
         let mut big_out = Vec::new();
-        emit(&mut new(), &mut LoopBuf::with_capacity(1 << 20), &mut big_out);
+        emit(
+            &mut new(),
+            &mut LoopBuf::with_capacity(1 << 20),
+            &mut big_out,
+        );
         for capacity in [24, 25, 40, 100] {
             let mut out = Vec::new();
             emit(&mut new(), &mut LoopBuf::with_capacity(capacity), &mut out);
@@ -372,7 +407,9 @@ fn a_string_written_in_pieces_is_the_same_as_one_written_whole() {
         let mut rest = tricky;
         while !rest.is_empty() {
             let cut = (rest.chars().next().map_or(0, char::len_utf8) * 3).min(rest.len());
-            let cut = (cut..=rest.len()).find(|&i| rest.is_char_boundary(i)).unwrap();
+            let cut = (cut..=rest.len())
+                .find(|&i| rest.is_char_boundary(i))
+                .unwrap();
             let (head, tail) = rest.split_at(cut);
             assert_eq!(w.write_string_content(b, head)?, head.len());
             rest = tail;
@@ -433,7 +470,10 @@ fn a_parser_can_feed_the_writer_through_a_small_ring() {
         out: Vec<u8>,
     }
     impl Echo {
-        fn go<T>(&mut self, mut f: impl FnMut(&mut Writer, &mut LoopBuf) -> WriteResult<T>) -> ParseResult<T> {
+        fn go<T>(
+            &mut self,
+            mut f: impl FnMut(&mut Writer, &mut LoopBuf) -> WriteResult<T>,
+        ) -> ParseResult<T> {
             let Echo { w, out_ring, out } = self;
             Ok(retry(out_ring, out, |r| f(w, r)))
         }
@@ -480,9 +520,7 @@ fn a_parser_can_feed_the_writer_through_a_small_ring() {
     }
 
     let long = "word \u{e9} ".repeat(5000);
-    let json = format!(
-        r#"{{"k":[1,-2.5,true,false,null,"a\tb","{long}"],"café":{{"x":[]}}}}"#
-    );
+    let json = format!(r#"{{"k":[1,-2.5,true,false,null,"a\tb","{long}"],"café":{{"x":[]}}}}"#);
     // the output ring (32 bytes) is far smaller than the 40 KB string
     let echo = Echo {
         w: Writer::new(),
@@ -529,5 +567,8 @@ fn round_trip_through_parser() {
     let mut p = Parser::new(Echo::default());
     p.receive(&mut ring).unwrap();
     p.close(&mut ring).unwrap();
-    assert_eq!(p.handler().0, [format!("k:{tricky}"), format!("s:{tricky}")]);
+    assert_eq!(
+        p.handler().0,
+        [format!("k:{tricky}"), format!("s:{tricky}")]
+    );
 }

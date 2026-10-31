@@ -39,7 +39,10 @@ impl ContentHandler for EventRecorder {
     }
 
     fn end_string_value(&mut self) -> rjsonparser::ParseResult<()> {
-        self.events.push(format!("string:{}", std::mem::take(&mut self.string_scratch)));
+        self.events.push(format!(
+            "string:{}",
+            std::mem::take(&mut self.string_scratch)
+        ));
         Ok(())
     }
 
@@ -175,8 +178,14 @@ fn parser_owns_a_boxed_handler_across_chunks() {
     struct Response {
         parser: Parser<Box<dyn KeyList>>,
     }
-    let mut r = Response { parser: Parser::new(Box::new(Keys::default()) as Box<dyn KeyList>) };
-    let chunks = [&b"{\"a\": 1, \"lo"[..], &b"ng\": [true], \"c\": nu"[..], &b"ll}"[..]];
+    let mut r = Response {
+        parser: Parser::new(Box::new(Keys::default()) as Box<dyn KeyList>),
+    };
+    let chunks = [
+        &b"{\"a\": 1, \"lo"[..],
+        &b"ng\": [true], \"c\": nu"[..],
+        &b"ll}"[..],
+    ];
     let total_len: usize = chunks.iter().map(|c| c.len()).sum();
     let mut buf = LoopBuf::with_capacity(total_len);
     for chunk in chunks {

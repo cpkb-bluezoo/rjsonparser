@@ -462,6 +462,10 @@ mod tests {
 
         let mut parser = Parser::with_buffer_size(DefaultHandler, 65536);
         parser.parse(doc.as_bytes()).unwrap();
-        assert_eq!(parser.key_symbol_table.len(), 30, "only the short keys are interned");
+        assert_eq!(
+            parser.key_symbol_table.len(),
+            30,
+            "only the short keys are interned"
+        );
     }
 }

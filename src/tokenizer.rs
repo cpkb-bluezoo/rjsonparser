@@ -57,14 +57,14 @@ enum State {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum NumStage {
     None,
-    AfterMinus,     // "-" seen: a digit must follow
-    Zero,           // a leading "0": no more integer digits allowed
-    Integer,        // integer digits 1-9...
-    FractionDot,    // "." seen: a digit must follow
-    Fraction,       // fraction digits
-    ExponentMark,   // "e" or "E" seen: a sign or digit must follow
-    ExponentSign,   // exponent sign seen: a digit must follow
-    Exponent,       // exponent digits
+    AfterMinus,   // "-" seen: a digit must follow
+    Zero,         // a leading "0": no more integer digits allowed
+    Integer,      // integer digits 1-9...
+    FractionDot,  // "." seen: a digit must follow
+    Fraction,     // fraction digits
+    ExponentMark, // "e" or "E" seen: a sign or digit must follow
+    ExponentSign, // exponent sign seen: a digit must follow
+    Exponent,     // exponent digits
 }
 
 // While the mantissa is at most this, any next digit fits an i64
@@ -210,7 +210,11 @@ impl NumberState {
                 self.big_digits.clone()
             });
         }
-        let value = if self.negative { -self.mantissa } else { self.mantissa };
+        let value = if self.negative {
+            -self.mantissa
+        } else {
+            self.mantissa
+        };
         if value >= i64::from(i32::MIN) && value <= i64::from(i32::MAX) {
             Number::I32(value as i32)
         } else {
@@ -225,7 +229,11 @@ impl NumberState {
     /// between them; in that rare case the nearer end, judged by the first
     /// dropped digit, is used and the result may be one ulp out.
     fn real_value(&self) -> Number {
-        let exponent = if self.exponent_negative { -self.exponent } else { self.exponent };
+        let exponent = if self.exponent_negative {
+            -self.exponent
+        } else {
+            self.exponent
+        };
         let e10 = exponent + self.decimal_shift;
         if !(self.mantissa_full && self.dropped_non_zero) {
             return Number::F64(decimal_to_f64(self.negative, self.mantissa, e10));
@@ -236,7 +244,11 @@ impl NumberState {
         } else {
             decimal_to_f64(false, self.mantissa + 1, e10)
         };
-        let value = if low == high || self.first_dropped < 5 { low } else { high };
+        let value = if low == high || self.first_dropped < 5 {
+            low
+        } else {
+            high
+        };
         Number::F64(if self.negative { -value } else { value })
     }
 }
@@ -248,8 +260,8 @@ fn decimal_to_f64(negative: bool, mantissa: i64, e10: i32) -> f64 {
     // representable power. Anything else goes through `str::parse`, which is
     // correctly rounded for every input.
     const POW10: [f64; 23] = [
-        1e0, 1e1, 1e2, 1e3, 1e4, 1e5, 1e6, 1e7, 1e8, 1e9, 1e10, 1e11, 1e12, 1e13, 1e14, 1e15,
-        1e16, 1e17, 1e18, 1e19, 1e20, 1e21, 1e22,
+        1e0, 1e1, 1e2, 1e3, 1e4, 1e5, 1e6, 1e7, 1e8, 1e9, 1e10, 1e11, 1e12, 1e13, 1e14, 1e15, 1e16,
+        1e17, 1e18, 1e19, 1e20, 1e21, 1e22,
     ];
     let m = mantissa as u64;
     let value = if m == 0 {
@@ -380,7 +392,9 @@ impl Tokenizer {
         match self.number.stage {
             NumStage::None => Ok(()),
             NumStage::AfterMinus => Err(ParseError::new("Invalid number: just '-'")),
-            NumStage::FractionDot => Err(ParseError::new("Decimal point must be followed by digit")),
+            NumStage::FractionDot => {
+                Err(ParseError::new("Decimal point must be followed by digit"))
+            }
             NumStage::ExponentMark => Err(ParseError::new("Incomplete exponent")),
             NumStage::ExponentSign => Err(ParseError::new("Exponent must have digit")),
             _ => self.emit_number(handler, locator),
@@ -421,7 +435,15 @@ impl Tokenizer {
             }
             self.after_cr = false;
 
-            if !self.process_token(handler, key_symbol_table, limits, locator, input, consumed, b)? {
+            if !self.process_token(
+                handler,
+                key_symbol_table,
+                limits,
+                locator,
+                input,
+                consumed,
+                b,
+            )? {
                 return Ok(());
             }
         }
@@ -467,7 +489,14 @@ impl Tokenizer {
                 }
                 if self.state == State::ExpectKey {
                     // A key is a single token: it must be complete in the ring
-                    if !self.process_key(handler, key_symbol_table, limits, locator, input, consumed)? {
+                    if !self.process_key(
+                        handler,
+                        key_symbol_table,
+                        limits,
+                        locator,
+                        input,
+                        consumed,
+                    )? {
                         return Ok(false);
                     }
                     self.token_done(limits)?;
@@ -604,14 +633,30 @@ impl Tokenizer {
                 if self.state != State::ExpectValue {
                     return Err(ParseError::new("Unexpected 'true'"));
                 }
-                self.process_literal(handler, limits, locator, input, consumed, b"rue", Some(true))
+                self.process_literal(
+                    handler,
+                    limits,
+                    locator,
+                    input,
+                    consumed,
+                    b"rue",
+                    Some(true),
+                )
             }
 
             b'f' => {
                 if self.state != State::ExpectValue {
                     return Err(ParseError::new("Unexpected 'false'"));
                 }
-                self.process_literal(handler, limits, locator, input, consumed, b"alse", Some(false))
+                self.process_literal(
+                    handler,
+                    limits,
+                    locator,
+                    input,
+                    consumed,
+                    b"alse",
+                    Some(false),
+                )
             }
 
             b'n' => {
@@ -632,7 +677,10 @@ impl Tokenizer {
                 Ok(true)
             }
 
-            _ => Err(ParseError::new(format!("Unexpected character: {}", b as char))),
+            _ => Err(ParseError::new(format!(
+                "Unexpected character: {}",
+                b as char
+            ))),
         }
     }
 
@@ -780,7 +828,8 @@ impl Tokenizer {
                         return Err(string_too_long(limit));
                     }
                 }
-                let (next, units) = self.decode_run(Some(&mut *handler), input, run_start, run_end)?;
+                let (next, units) =
+                    self.decode_run(Some(&mut *handler), input, run_start, run_end)?;
                 self.string_bytes += (next - run_start) as u64;
                 locator.add_column(units);
                 *consumed = next;
@@ -849,7 +898,11 @@ impl Tokenizer {
     ) -> ParseResult<(usize, usize)> {
         // a content call of a few bytes is not worth making for a string,
         // but a key only needs room for what is left of it
-        let low_water = if handler.is_some() { MIN_DECODE_ROOM } else { 1 };
+        let low_water = if handler.is_some() {
+            MIN_DECODE_ROOM
+        } else {
+            1
+        };
         let mut p = from;
         let mut units = 0;
         while p < to {
@@ -897,7 +950,10 @@ impl Tokenizer {
 
     /// Frees the character buffer: a string's content goes to the handler; a
     /// key has nowhere to go, so it must fit.
-    fn make_room<H: ContentHandler + ?Sized>(&mut self, handler: &mut Option<&mut H>) -> ParseResult<()> {
+    fn make_room<H: ContentHandler + ?Sized>(
+        &mut self,
+        handler: &mut Option<&mut H>,
+    ) -> ParseResult<()> {
         match handler.as_deref_mut() {
             Some(h) => self.flush_chars(h),
             None => Err(ParseError::new(
@@ -978,9 +1034,9 @@ impl Tokenizer {
 
         let src_units;
         if let Some(bytes) = interned {
-            let hash = bytes
-                .iter()
-                .fold(KeySymbolTable::initial_hash(), |h, &b| KeySymbolTable::hash_byte(h, b));
+            let hash = bytes.iter().fold(KeySymbolTable::initial_hash(), |h, &b| {
+                KeySymbolTable::hash_byte(h, b)
+            });
             self.key_intern_attempts += 1;
             if let Some(found) = key_symbol_table.lookup(bytes, hash) {
                 self.key_intern_hits += 1;
@@ -990,7 +1046,8 @@ impl Tokenizer {
             }
             src_units = self.decode_key(input, start, end)?;
             key_symbol_table.put(bytes, hash, self.chars.clone());
-            if self.key_intern_hits == 0 && self.key_intern_attempts >= KEY_INTERN_DISABLE_THRESHOLD {
+            if self.key_intern_hits == 0 && self.key_intern_attempts >= KEY_INTERN_DISABLE_THRESHOLD
+            {
                 self.key_intern_disabled = true;
             }
         } else {
@@ -1023,7 +1080,8 @@ impl Tokenizer {
         while p < end {
             let run_end = scan_plain(input, p, end);
             if run_end > p {
-                let (next, units) = self.decode_run::<dyn ContentHandler>(None, input, p, run_end)?;
+                let (next, units) =
+                    self.decode_run::<dyn ContentHandler>(None, input, p, run_end)?;
                 if next < run_end {
                     return Err(malformed_utf8());
                 }
@@ -1063,7 +1121,8 @@ impl Tokenizer {
     ) -> ParseResult<bool> {
         let limit = limits.max_number_length;
         let total = input.len();
-        let too_long = |limit: usize| ParseError::new(format!("Maximum number length exceeded: {limit}"));
+        let too_long =
+            |limit: usize| ParseError::new(format!("Maximum number length exceeded: {limit}"));
 
         while *consumed < total {
             let n = &mut self.number;
@@ -1413,7 +1472,10 @@ fn resolve_escape(input: Spans<'_>, i: usize) -> ParseResult<Option<(char, usize
         };
     }
     // a low surrogate on its own falls out as U+FFFD too
-    Ok(Some((char::from_u32(unit).unwrap_or(char::REPLACEMENT_CHARACTER), len)))
+    Ok(Some((
+        char::from_u32(unit).unwrap_or(char::REPLACEMENT_CHARACTER),
+        len,
+    )))
 }
 
 #[cfg(test)]

@@ -94,14 +94,24 @@ fn assert_positions(json: &str, expected: &[&str]) {
 fn structural_tokens_end_after_themselves() {
     assert_positions("[1]", &["[@1:2", "number@1:3", "]@1:4"]);
     assert_positions("[]", &["[@1:2", "]@1:3"]);
-    assert_positions("{\"k\":true}", &["{@1:2", "key@1:5", "boolean@1:10", "}@1:11"]);
+    assert_positions(
+        "{\"k\":true}",
+        &["{@1:2", "key@1:5", "boolean@1:10", "}@1:11"],
+    );
 }
 
 #[test]
 fn a_key_ends_after_its_closing_quote_not_after_the_colon() {
     assert_positions(
         "{\"abc\" : 1}",
-        &["{@1:2", "key@1:7", "ws@1:8", "ws@1:10", "number@1:11", "}@1:12"],
+        &[
+            "{@1:2",
+            "key@1:7",
+            "ws@1:8",
+            "ws@1:10",
+            "number@1:11",
+            "}@1:12",
+        ],
     );
 }
 
@@ -113,7 +123,10 @@ fn literals_end_after_their_last_character() {
 
 #[test]
 fn a_string_value_is_reported_as_its_quotes_and_content_end() {
-    assert_positions("[\"ab\"]", &["[@1:2", "start@1:3", "content@1:5", "end@1:6", "]@1:7"]);
+    assert_positions(
+        "[\"ab\"]",
+        &["[@1:2", "start@1:3", "content@1:5", "end@1:6", "]@1:7"],
+    );
     assert_positions("\"hi\"", &["start@1:2", "content@1:4", "end@1:5"]);
     assert_positions("[\"\"]", &["[@1:2", "start@1:3", "end@1:4", "]@1:5"]);
 }
@@ -150,7 +163,15 @@ fn an_escape_counts_as_the_characters_written_in_the_source() {
 fn whitespace_ends_after_its_last_character_and_newlines_start_a_new_line() {
     assert_positions(
         "[ 1,\n  2 ]",
-        &["[@1:2", "ws@1:3", "number@1:4", "ws@2:3", "number@2:4", "ws@2:5", "]@2:6"],
+        &[
+            "[@1:2",
+            "ws@1:3",
+            "number@1:4",
+            "ws@2:3",
+            "number@2:4",
+            "ws@2:5",
+            "]@2:6",
+        ],
     );
     assert_positions("\n\n[]", &["ws@3:1", "[@3:2", "]@3:3"]);
 }
@@ -194,6 +215,13 @@ fn a_string_content_piece_ends_after_its_own_text() {
     // one byte at a time: each piece is reported at the end of that character
     assert_eq!(
         positions("[\"ab\"]", 1),
-        ["[@1:2", "start@1:3", "content@1:4", "content@1:5", "end@1:6", "]@1:7"]
+        [
+            "[@1:2",
+            "start@1:3",
+            "content@1:4",
+            "content@1:5",
+            "end@1:6",
+            "]@1:7"
+        ]
     );
 }

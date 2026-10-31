@@ -27,8 +27,18 @@ fn assert_chunk_invariant(json: &str) {
 #[test]
 fn numbers_split_everywhere() {
     for json in [
-        "[12345]", "[123.456]", "[123.456789]", "[123e45]", "[123e+45]", "[123e456]",
-        "[123.456e789]", "[-123.456]", "[123.456e-78]", "[-0]", "[0.5]", "[1E5]",
+        "[12345]",
+        "[123.456]",
+        "[123.456789]",
+        "[123e45]",
+        "[123e+45]",
+        "[123e456]",
+        "[123.456e789]",
+        "[-123.456]",
+        "[123.456e-78]",
+        "[-0]",
+        "[0.5]",
+        "[1E5]",
     ] {
         assert_chunk_invariant(json);
     }
@@ -66,7 +76,11 @@ fn utf8_bom_then_document_split_everywhere() {
     json.extend_from_slice(r#"{"k":"v\u00e9"}"#.as_bytes());
     let whole = parse_chunked(&json, json.len()).unwrap().events;
     for chunk in 1..=json.len() {
-        assert_eq!(parse_chunked(&json, chunk).unwrap().events, whole, "chunk {chunk}");
+        assert_eq!(
+            parse_chunked(&json, chunk).unwrap().events,
+            whole,
+            "chunk {chunk}"
+        );
     }
 }
 

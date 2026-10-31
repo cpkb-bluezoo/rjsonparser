@@ -29,7 +29,11 @@ fn huge_plain_string_in_small_chunks() {
 #[test]
 fn huge_string_with_early_escape_in_small_chunks() {
     // An escape at the front defeats any "skip the plain prefix" shortcut.
-    let json = format!("\"\\n{}\\u00e9{}\"", "b".repeat(SIZE / 2), "c".repeat(SIZE / 2));
+    let json = format!(
+        "\"\\n{}\\u00e9{}\"",
+        "b".repeat(SIZE / 2),
+        "c".repeat(SIZE / 2)
+    );
     let h = timed(json.as_bytes());
     assert_eq!(h.strings[0].chars().count(), SIZE + 2);
     assert!(h.strings[0].starts_with("\nb"));

@@ -9,7 +9,10 @@ fn s(json: &str) -> String {
 }
 
 fn err_msg(json: &str) -> String {
-    parse_all(json.as_bytes()).expect_err("should fail").to_string().to_lowercase()
+    parse_all(json.as_bytes())
+        .expect_err("should fail")
+        .to_string()
+        .to_lowercase()
 }
 
 #[test]
@@ -63,7 +66,10 @@ fn surrogate_pairs() {
 
 #[test]
 fn real_world_strings() {
-    assert_eq!(s(r#""C:\\Users\\test\\file.txt""#), "C:\\Users\\test\\file.txt");
+    assert_eq!(
+        s(r#""C:\\Users\\test\\file.txt""#),
+        "C:\\Users\\test\\file.txt"
+    );
     assert_eq!(s(r#""{\"key\": \"value\"}""#), "{\"key\": \"value\"}");
     assert_eq!(s(r#""Line 1\nLine 2\nLine 3""#), "Line 1\nLine 2\nLine 3");
     assert_eq!(

@@ -1,7 +1,7 @@
 mod common;
 
-use rjsonparser::ParserLimits;
 use loopbuf::LoopBuf;
+use rjsonparser::ParserLimits;
 
 use common::{parse_all, parse_chunked, parse_string_value, RecordingHandler};
 use rjsonparser::{ContentHandler, DefaultHandler, ParseResult, Parser};
@@ -11,8 +11,14 @@ fn escape_basic() {
     assert_eq!(parse_string_value(r#""Hello\"World""#), "Hello\"World");
     assert_eq!(parse_string_value(r#""Hello\\World""#), "Hello\\World");
     assert_eq!(parse_string_value(r#""Hello\/World""#), "Hello/World");
-    assert_eq!(parse_string_value(r#""Hello\bWorld""#), "Hello\u{0008}World");
-    assert_eq!(parse_string_value(r#""Hello\fWorld""#), "Hello\u{000c}World");
+    assert_eq!(
+        parse_string_value(r#""Hello\bWorld""#),
+        "Hello\u{0008}World"
+    );
+    assert_eq!(
+        parse_string_value(r#""Hello\fWorld""#),
+        "Hello\u{000c}World"
+    );
     assert_eq!(parse_string_value(r#""Hello\nWorld""#), "Hello\nWorld");
     assert_eq!(parse_string_value(r#""Hello\rWorld""#), "Hello\rWorld");
     assert_eq!(parse_string_value(r#""Hello\tWorld""#), "Hello\tWorld");
@@ -30,10 +36,7 @@ fn escape_unicode() {
 #[test]
 fn escape_surrogate_pair() {
     // Musical G clef U+1D11E
-    assert_eq!(
-        parse_string_value(r#""\uD834\uDD1E""#),
-        "\u{1D11E}"
-    );
+    assert_eq!(parse_string_value(r#""\uD834\uDD1E""#), "\u{1D11E}");
 }
 
 #[test]

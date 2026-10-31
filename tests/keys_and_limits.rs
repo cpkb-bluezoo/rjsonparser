@@ -1,7 +1,7 @@
 mod common;
 
-use rjsonparser::ParserLimits;
 use loopbuf::LoopBuf;
+use rjsonparser::ParserLimits;
 
 use common::{parse_all, RecordingHandler};
 use rjsonparser::{ContentHandler, Parser};
@@ -9,7 +9,10 @@ use rjsonparser::{ContentHandler, Parser};
 /// Feeds `data` to `parser` through a freshly allocated ring sized to fit
 /// it all, returning that ring so the caller can pass the same one to
 /// `close()` afterward if needed.
-fn feed<H: ContentHandler>(parser: &mut Parser<H>, data: &[u8]) -> (rjsonparser::ParseResult<()>, LoopBuf) {
+fn feed<H: ContentHandler>(
+    parser: &mut Parser<H>,
+    data: &[u8],
+) -> (rjsonparser::ParseResult<()>, LoopBuf) {
     let mut buf = LoopBuf::with_capacity(data.len().max(1));
     buf.extend_from_slice(data);
     let result = parser.receive(&mut buf);
