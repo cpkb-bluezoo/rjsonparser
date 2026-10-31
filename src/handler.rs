@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::rc::Rc;
 
 use crate::error::ParseResult;
 use crate::locator::Locator;
@@ -101,7 +101,7 @@ pub trait ContentHandler {
 
     /// Called once when the tokenizer is created for a document. The
     /// locator is live: keep it and read it from inside later callbacks.
-    fn set_locator(&mut self, _locator: Arc<dyn Locator + Send + Sync>) {}
+    fn set_locator(&mut self, _locator: Rc<dyn Locator>) {}
 
     /// When false (default), the parser skips whitespace string extraction.
     fn needs_whitespace(&self) -> bool {
@@ -154,7 +154,7 @@ macro_rules! forward_content_handler {
             fn key(&mut self, key: &str) -> ParseResult<()> {
                 (**self).key(key)
             }
-            fn set_locator(&mut self, locator: Arc<dyn Locator + Send + Sync>) {
+            fn set_locator(&mut self, locator: Rc<dyn Locator>) {
                 (**self).set_locator(locator)
             }
             fn needs_whitespace(&self) -> bool {

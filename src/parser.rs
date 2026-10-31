@@ -1,7 +1,7 @@
 //! Streaming JSON parser using the push (`receive`) model (Java `JSONParser` port).
 
 use std::io::Read;
-use std::sync::Arc;
+use std::rc::Rc;
 
 use loopbuf::{LoopBuf, Spans};
 
@@ -59,7 +59,7 @@ pub struct Parser<H: ContentHandler> {
     handler: H,
     key_symbol_table: KeySymbolTable,
     limits: ParserLimits,
-    locator: Arc<SharedLocator>,
+    locator: Rc<SharedLocator>,
     reject_duplicate_keys: bool,
     checked_bom: bool,
     closed: bool,
@@ -91,7 +91,7 @@ impl<H: ContentHandler> Parser<H> {
             handler,
             key_symbol_table: KeySymbolTable::new(),
             limits: ParserLimits::default(),
-            locator: Arc::new(SharedLocator::new()),
+            locator: Rc::new(SharedLocator::new()),
             reject_duplicate_keys: false,
             checked_bom: false,
             closed: false,
@@ -328,7 +328,7 @@ impl<H: ContentHandler> Parser<H> {
     /// concern to reset.
     pub fn reset(&mut self) {
         self.tokenizer = None;
-        self.locator = Arc::new(SharedLocator::new());
+        self.locator = Rc::new(SharedLocator::new());
         self.checked_bom = false;
         self.closed = false;
         self.document_length = 0;

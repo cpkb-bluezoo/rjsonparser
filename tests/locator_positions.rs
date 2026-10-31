@@ -4,14 +4,14 @@
 //! are each one line break, and the position reported with an event is where
 //! that event ends.
 
-use std::sync::Arc;
+use std::rc::Rc;
 
 use loopbuf::LoopBuf;
 use rjsonparser::{ContentHandler, Locator, Number, ParseResult, Parser};
 
 #[derive(Default)]
 struct Recorder {
-    locator: Option<Arc<dyn Locator + Send + Sync>>,
+    locator: Option<Rc<dyn Locator>>,
     events: Vec<String>,
 }
 
@@ -25,7 +25,7 @@ impl Recorder {
 }
 
 impl ContentHandler for Recorder {
-    fn set_locator(&mut self, locator: Arc<dyn Locator + Send + Sync>) {
+    fn set_locator(&mut self, locator: Rc<dyn Locator>) {
         self.locator = Some(locator);
     }
     fn needs_whitespace(&self) -> bool {

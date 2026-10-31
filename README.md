@@ -85,6 +85,10 @@ Limits are a `ParserLimits` struct, each field `None` for no limit
 An escaped surrogate pair is delivered as one character. A surrogate with no
 partner cannot be represented in a Rust `&str`, so it is reported as U+FFFD.
 
+Threads: `receive` is always called on one thread, so nothing requires a handler
+or the `Locator` it keeps (an `Rc<dyn Locator>`) to be `Send` or `Sync`, and the
+parser itself is not `Send`.
+
 Positions: a handler may keep the `Locator` from `set_locator` and read it
 inside any callback. Lines and columns start at 1, a column counts UTF-16
 units, and the position is where the event ends.

@@ -1,4 +1,4 @@
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::cell::Cell;
 
 /// Locator information for the JSON parser (Java `JSONLocator`).
 ///
@@ -19,43 +19,42 @@ pub trait Locator {
 
 /// Live line/column storage the tokenizer updates as it consumes bytes.
 ///
-/// Atomics rather than `Cell`s so a handler holding the locator does not make
-/// the parser `!Send`. There is a single writer, so loads and stores are
-/// relaxed and cost the same as plain ones.
+/// `Cell`s: `receive` is always called on one thread, so the parser, the
+/// handler and any locator the handler keeps all live on it, and nothing here
+/// needs to be `Send` or `Sync`.
 #[derive(Debug)]
 pub(crate) struct SharedLocator {
-    line: AtomicUsize,
-    column: AtomicUsize,
+    line: Cell<usize>,
+    column: Cell<usize>,
 }
 
 impl SharedLocator {
     pub(crate) fn new() -> Self {
         Self {
-            line: AtomicUsize::new(1),
-            column: AtomicUsize::new(1),
+            line: Cell::new(1),
+            column: Cell::new(1),
         }
     }
 
     pub(crate) fn set_line(&self, line: usize) {
-        self.line.store(line, Ordering::Relaxed);
+        self.line.set(line);
     }
 
     pub(crate) fn set_column(&self, column: usize) {
-        self.column.store(column, Ordering::Relaxed);
+        self.column.set(column);
     }
 
     pub(crate) fn add_column(&self, delta: usize) {
-        self.column
-            .store(self.column.load(Ordering::Relaxed) + delta, Ordering::Relaxed);
+        self.column.set(self.column.get() + delta);
     }
 }
 
 impl Locator for SharedLocator {
     fn line_number(&self) -> usize {
-        self.line.load(Ordering::Relaxed)
+        self.line.get()
     }
 
     fn column_number(&self) -> usize {
-        self.column.load(Ordering::Relaxed)
+        self.column.get()
     }
 }
