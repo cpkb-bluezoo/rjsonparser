@@ -108,19 +108,18 @@ fn chunked_receive() {
 
 #[test]
 fn writer_roundtrip_basic() {
-    let mut w = Writer::buffer(64);
-    w.write_start_object().unwrap();
-    w.write_key("name").unwrap();
-    w.write_string("Alice").unwrap();
-    w.write_key("age").unwrap();
-    w.write_i32(30).unwrap();
-    w.write_end_object().unwrap();
-    let bytes = w.finish().unwrap();
+    // the writer encodes into a ring, and the parser reads that same ring
+    let mut buf = LoopBuf::with_capacity(64);
+    let mut w = Writer::new();
+    w.write_start_object(&mut buf).unwrap();
+    w.write_key(&mut buf, "name").unwrap();
+    w.write_string(&mut buf, "Alice").unwrap();
+    w.write_key(&mut buf, "age").unwrap();
+    w.write_i32(&mut buf, 30).unwrap();
+    w.write_end_object(&mut buf).unwrap();
 
     let mut handler = EventRecorder::default();
     let mut parser = Parser::new(&mut handler);
-    let mut buf = LoopBuf::with_capacity(bytes.len());
-    buf.extend_from_slice(&bytes);
     parser.receive(&mut buf).unwrap();
     parser.close(&mut buf).unwrap();
 

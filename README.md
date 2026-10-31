@@ -84,18 +84,45 @@ units, and the position is where the event ends.
 
 ## Writer
 
+The writer is the mirror of `receive(&mut LoopBuf)`: it encodes straight into a
+caller-owned `LoopBuf` and keeps no buffer of its own, only where it is in the
+document.
+
 ```rust
+use loopbuf::LoopBuf;
 use rjsonparser::{Number, Writer};
 
-let mut w = Writer::buffer(128);
-w.write_start_object()?;
-w.write_key("name")?;
-w.write_string("Alice")?;
-w.write_key("age")?;
-w.write_number(&Number::I32(30))?;
-w.write_end_object()?;
-let bytes = w.finish()?;
+let mut ring = LoopBuf::with_capacity(4096);
+let mut w = Writer::new();
+w.write_start_object(&mut ring)?;
+w.write_key(&mut ring, "name")?;
+w.write_string(&mut ring, "Alice")?;
+w.write_key(&mut ring, "age")?;
+w.write_number(&mut ring, &Number::I32(30))?;
+w.write_end_object(&mut ring)?;
+// `ring` now holds the JSON: drain it to a socket or file, or parse it
 ```
+
+Every call is **atomic**: it appends the whole token (with its separator and
+indentation) or nothing, and leaves the writer's state unchanged. So
+`err.is_would_block()` means the ring has no room right now: drain it and repeat
+the same call.
+
+```rust
+loop {
+    match w.write_key(&mut ring, "name") {
+        Err(e) if e.is_would_block() => { io::copy(&mut ring, &mut socket)?; }
+        other => break other?,
+    }
+}
+```
+
+A token larger than the ring's whole capacity can never fit and is an
+`InvalidInput` error. Write a long string in pieces with `write_start_string`,
+`write_string_content` (which takes as much as fits and returns how much) and
+`write_end_string`; they are also what a parser's streamed string events feed,
+so a string of any length passes through a small ring. NaN and the infinities
+have no JSON representation and are rejected before anything is written.
 
 ## Testing
 

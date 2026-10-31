@@ -36,6 +36,18 @@ impl WriteError {
     pub fn new(source: std::io::Error) -> Self {
         Self { source }
     }
+
+    /// The kind of the underlying I/O error.
+    pub fn kind(&self) -> std::io::ErrorKind {
+        self.source.kind()
+    }
+
+    /// True if the ring had no room for the write right now. Nothing was
+    /// written and the writer's state is unchanged: drain the ring and repeat
+    /// the same call.
+    pub fn is_would_block(&self) -> bool {
+        self.source.kind() == std::io::ErrorKind::WouldBlock
+    }
 }
 
 impl fmt::Display for WriteError {
