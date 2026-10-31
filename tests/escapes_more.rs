@@ -9,7 +9,7 @@ fn s(json: &str) -> String {
 }
 
 fn err_msg(json: &str) -> String {
-    parse_all(json.as_bytes()).err().expect("should fail").to_string().to_lowercase()
+    parse_all(json.as_bytes()).expect_err("should fail").to_string().to_lowercase()
 }
 
 #[test]

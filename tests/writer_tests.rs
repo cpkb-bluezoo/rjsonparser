@@ -136,12 +136,12 @@ fn primitive_values() {
         w.write_key(b, "int")?;
         w.write_number(b, &Number::I32(42))?;
         w.write_key(b, "float")?;
-        w.write_number(b, &Number::F64(3.14))?;
+        w.write_number(b, &Number::F64(3.25))?;
         w.write_end_object(b)
     });
     assert_eq!(
         json,
-        r#"{"bool_true":true,"bool_false":false,"null":null,"int":42,"float":3.14}"#
+        r#"{"bool_true":true,"bool_false":false,"null":null,"int":42,"float":3.25}"#
     );
 }
 
@@ -494,7 +494,7 @@ fn a_parser_can_feed_the_writer_through_a_small_ring() {
     let mut echo = parser.into_handler();
     echo.out_ring.read_to_end(&mut echo.out).unwrap();
 
-    let expected = json.replace("\\u00e9", "\u{e9}").replace("-2.5", "-2.5");
+    let expected = json.replace("\\u00e9", "\u{e9}");
     assert_eq!(String::from_utf8(echo.out).unwrap(), expected);
 }
 
